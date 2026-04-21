@@ -15,5 +15,5 @@ export default defineNuxtConfig({
       ]
     }
   },
-  css: ['~/app/assets/css/main.css', 'katex/dist/katex.min.css', 'pdfjs-dist/legacy/web/pdf_viewer.css']
+  css: ['~/assets/css/main.css', 'katex/dist/katex.min.css', 'pdfjs-dist/legacy/web/pdf_viewer.css']
 })

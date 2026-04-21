@@ -48,6 +48,7 @@ public class NoteAnnotationServiceImpl implements NoteAnnotationService {
         annotation.setPageNumber(request.pageNumber());
         annotation.setAnchorX(normalizeAnchorCoordinate(request.anchorX(), "X"));
         annotation.setAnchorY(normalizeAnchorCoordinate(request.anchorY(), "Y"));
+        annotation.setSelectionRects(normalizeSelectionRects(request.selectionRects()));
         annotation.setCreatedAt(OffsetDateTime.now());
 
         return toResponse(noteAnnotationRepository.save(annotation));
@@ -69,8 +70,23 @@ public class NoteAnnotationServiceImpl implements NoteAnnotationService {
         annotation.setPageNumber(request.pageNumber());
         annotation.setAnchorX(normalizeAnchorCoordinate(request.anchorX(), "X"));
         annotation.setAnchorY(normalizeAnchorCoordinate(request.anchorY(), "Y"));
+        annotation.setSelectionRects(normalizeSelectionRects(request.selectionRects()));
 
         return toResponse(noteAnnotationRepository.update(annotation));
+    }
+
+    @Override
+    public void delete(Long noteId, Long annotationId) {
+        ensureNoteExists(noteId);
+
+        NoteAnnotation annotation = noteAnnotationRepository.findById(annotationId)
+                .orElseThrow(() -> new BusinessException("NOTE_ANNOTATION_NOT_FOUND", "未找到对应的笔记批注"));
+
+        if (!noteId.equals(annotation.getNoteId())) {
+            throw new BusinessException("NOTE_ANNOTATION_NOT_FOUND", "未找到对应的笔记批注");
+        }
+
+        noteAnnotationRepository.deleteById(annotationId);
     }
 
     private void ensureNoteExists(Long noteId) {
@@ -108,6 +124,41 @@ public class NoteAnnotationServiceImpl implements NoteAnnotationService {
         return value;
     }
 
+    private List<com.majinhai.website.model.entity.NoteAnnotationSelectionRect> normalizeSelectionRects(
+            List<com.majinhai.website.model.dto.NoteAnnotationSelectionRect> selectionRects
+    ) {
+        if (selectionRects == null || selectionRects.isEmpty()) {
+            return List.of();
+        }
+
+        return selectionRects.stream()
+                .filter(rect -> rect != null && rect.width() != null && rect.height() != null)
+                .map(rect -> {
+                    double x = normalizeAnchorCoordinate(rect.x(), "selection rect X");
+                    double y = normalizeAnchorCoordinate(rect.y(), "selection rect Y");
+                    double width = normalizeSize(rect.width(), "selection rect width");
+                    double height = normalizeSize(rect.height(), "selection rect height");
+                    com.majinhai.website.model.entity.NoteAnnotationSelectionRect normalized =
+                            new com.majinhai.website.model.entity.NoteAnnotationSelectionRect();
+                    normalized.setX(x);
+                    normalized.setY(y);
+                    normalized.setWidth(width);
+                    normalized.setHeight(height);
+                    return normalized;
+                })
+                .toList();
+    }
+
+    private Double normalizeSize(Double value, String fieldName) {
+        if (value == null) {
+            throw new BusinessException("NOTE_ANNOTATION_SELECTION_INVALID", "PDF 批注 " + fieldName + " 无效");
+        }
+        if (value < 0 || value > 1) {
+            throw new BusinessException("NOTE_ANNOTATION_SELECTION_INVALID", "PDF 批注 " + fieldName + " 无效");
+        }
+        return value;
+    }
+
     private NoteAnnotationResponse toResponse(NoteAnnotation annotation) {
         return new NoteAnnotationResponse(
                 annotation.getId(),
@@ -117,6 +168,14 @@ public class NoteAnnotationServiceImpl implements NoteAnnotationService {
                 annotation.getPageNumber(),
                 annotation.getAnchorX(),
                 annotation.getAnchorY(),
+                annotation.getSelectionRects().stream()
+                        .map(rect -> new com.majinhai.website.model.dto.NoteAnnotationSelectionRect(
+                                rect.getX(),
+                                rect.getY(),
+                                rect.getWidth(),
+                                rect.getHeight()
+                        ))
+                        .toList(),
                 annotation.getCreatedAt()
         );
     }

@@ -11,4 +11,6 @@ public interface NoteAnnotationService {
     NoteAnnotationResponse create(Long noteId, NoteAnnotationRequest request);
 
     NoteAnnotationResponse update(Long noteId, Long annotationId, NoteAnnotationRequest request);
+
+    void delete(Long noteId, Long annotationId);
 }

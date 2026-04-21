@@ -1,50 +1,59 @@
 # Website Project Progress
 
-## Project Goal
+## Project Overview
 
-Build a personal website that supports:
+### Project Goal
+
+Build a personal website for mainland China access with the following capabilities:
 
 - Personal blog publishing
-- An algorithm study workspace
+- Algorithm study workspace
 - Daily check-ins and learning records
-- Future note upload, code upload, and annotations
+- Study note upload, categorization, preview, and annotation
+- Editable learning roadmap
 - Self-hosted deployment with room for long-term iteration
 
-Primary target:
+### Workspace
 
-- Visitors in mainland China
+`F:\website`
 
-Workspace:
+### Current Overall Status
 
-- `F:\website`
+- Current phase: frontend core-feature version complete + backend file persistence in place
+- Current focus: finish blog content flow, stabilize production build, and prepare for cloud deployment
+- Deployment direction: self-hosted cloud server + domain + ICP filing + Caddy
+- Target region: mainland China
 
-## Current Status
+## Status Definitions
 
-- Current phase: frontend first-version implementation + backend basic API prototype
-- Current focus: refine the first frontend version, add real persistence/upload capabilities, and unblock production build/deployment
-- Deployment direction: self-hosted cloud server with domain, ICP filing, HTTPS, and Caddy reverse proxy
+- `Not started`: no execution yet
+- `In progress`: actively being worked on
+- `Completed`: implemented and verified
+- `Blocked`: cannot continue until another issue or external dependency is resolved
 
-## Status Snapshot
+## Current Snapshot
 
-| Area | Status | Notes |
-| --- | --- | --- |
-| Workspace and docs | In progress | Workspace, progress docs, stack decision, and architecture docs already exist |
-| Frontend initialization | Completed | Nuxt project created, dependencies installed, local development already runs |
-| Frontend first-version pages | Completed | Home, Blog, Algorithms, and About pages are implemented |
-| Frontend responsive/detail refinement | In progress | Basic responsive layout exists, but article detail and footer filing area are still missing |
-| Backend initialization | Completed | Spring Boot project skeleton is ready |
-| Backend basic API | In progress | `GET /api/health`, `GET /api/checkins`, and `POST /api/checkins` already exist |
-| Backend persistence/storage design | In progress | Storage config exists, but check-ins still use in-memory repository and SQLite is not wired in yet |
-| Deployment templates | Completed | Caddy example and frontend/backend deployment scripts already exist |
-| Production build verification | Blocked | Backend tests pass, but Nuxt production build still fails at Nitro packaging on Windows |
-| Cloud server / domain / ICP | Not started | Still requires purchase and filing preparation |
+| Area | Status | Priority | Current Assessment | Notes |
+| --- | --- | --- | --- | --- |
+| Planning and structure | Completed | P0 | Stable | Stack, repo layout, and baseline docs are defined |
+| Frontend initialization | Completed | P0 | Stable | Nuxt app, dependencies, and local dev flow are working |
+| Frontend core pages | Completed | P0 | Usable | Home, Blog, Algorithms, About, Notes, and Roadmap pages are implemented |
+| Study note feature set | Completed | P0 | Usable | Upload, list, tag filtering, detail, Markdown/PDF preview, and annotations are working |
+| Markdown / PDF annotations | Completed | P0 | First usable version complete | Markdown highlights, PDF text highlights, anchor annotations, edit, and delete are wired |
+| Algorithm roadmap | Completed | P1 | Editable | Mind-map style roadmap now supports editing, drag and drop, and persistence |
+| Backend initialization | Completed | P0 | Stable | Spring Boot Maven project is in place |
+| Backend first API slice | Completed | P0 | Shaped up | Health, check-ins, notes, annotations, and roadmap APIs exist |
+| Backend persistence and storage | In progress | P0 | Partially landed | Notes, annotations, check-ins, and roadmap use file persistence; SQLite is still pending |
+| Deployment templates | Completed | P1 | Ready as templates | Caddy example and deploy scripts exist |
+| Frontend production build | Blocked | P0 | Still needs work | `npm run build` is still blocked in Nitro packaging |
+| Cloud deployment / domain / ICP | Not started | P0 | Still pending | Server is rented, but real rollout and filing have not started |
 
 ## Completed Work
 
-### Planning and structure
+### Planning and architecture
 
 - [x] Separate the new website from the old blog repository
-- [x] Create independent workspace folders
+- [x] Create an independent workspace
 - [x] Confirm the main stack: Nuxt + Spring Boot + Caddy
 - [x] Add architecture and stack decision documents
 
@@ -52,183 +61,203 @@ Workspace:
 
 - [x] Initialize the Nuxt frontend project
 - [x] Install dependencies and run local development
-- [x] Build the main layout, navigation, and footer
-- [x] Complete first-version pages for Home, Blog, Algorithms, and About
-- [x] Add a static algorithm check-in calendar component for product direction demo
+- [x] Build the main layout, navigation, and shared visual style
+- [x] Implement Home, Blog, Algorithms, and About first versions
+- [x] Add a real check-in panel and heatmap direction for algorithms
+- [x] Add a dedicated study notes page at `/notes`
+- [x] Add note listing, tag filtering, summary cards, and upload heatmap
+- [x] Add study note detail pages with Markdown, code, and PDF preview
+- [x] Add Markdown rendering improvements including code and formula support
+- [x] Add Markdown annotations with highlight, linking, edit, and delete
+- [x] Add PDF original preview, PDF.js annotation mode, text-highlight annotations, and anchor annotations
+- [x] Add a dedicated roadmap page for algorithm learning
+- [x] Add roadmap editing and drag-and-drop node movement
 
 ### Backend
 
 - [x] Initialize the Spring Boot backend project
-- [x] Add health endpoint
-- [x] Add check-in list/create endpoints
-- [x] Add DTO / service / repository structure for the first backend slice
-- [x] Add backend test scaffold and verify Maven tests can pass
+- [x] Add `GET /api/health`
+- [x] Add `GET /api/checkins` and `POST /api/checkins`
+- [x] Add study note upload API
+- [x] Add note list and note detail APIs
+- [x] Add note annotation create / read / update / delete APIs
+- [x] Add roadmap read / save APIs
+- [x] Add `website.storage` configuration structure
+- [x] Verify backend tests with `mvn test`
 
-### Deployment
+### Storage and persistence
 
-- [x] Add Caddy example configuration
-- [x] Add frontend deployment script template
-- [x] Add backend deployment script template
+- [x] Persist study note metadata to file storage
+- [x] Persist note annotations to file storage
+- [x] Persist check-ins to file storage
+- [x] Persist algorithm roadmap to file storage
+- [x] Confirm current note files are stored under `F:\website\backend\uploads\notes`
 
 ## Work In Progress
 
-- [ ] Refine the first frontend version into a deployable V1 experience
-- [ ] Add article detail page and richer blog content structure
-- [ ] Replace in-memory check-in storage with persistent storage
-- [ ] Design note/upload/annotation data model
-- [ ] Resolve Nuxt production build issue on Windows / current environment
+- [ ] Finish the real blog content flow, especially article detail and richer content APIs
+- [ ] Complete deploy-ready frontend polish, including footer filing placeholder and final responsive cleanup
+- [ ] Upgrade core data persistence from file-based storage to SQLite
+- [ ] Fix the remaining Nuxt production build blocker
+- [ ] Normalize storage paths before cloud deployment
 
 ## Blockers and Risks
 
-- [ ] Nuxt production build is not fully passing yet
-  - Client and server builds complete
-  - Nitro packaging currently fails with a `readlink` / `EISDIR` issue around `vue-bundle-renderer`
-- [ ] Deployment is not ready until production build is stable
-- [ ] Mainland launch still depends on cloud server purchase, domain registration, and ICP filing
+- [ ] Nuxt production build is still blocked
+  - `npm run build` is still failing in Nitro packaging
+- [ ] Storage path is still relative to backend startup directory
+  - Current note data is landing in `backend/uploads`, which is fine locally but should be stabilized before deployment
+- [ ] SQLite is still not wired in
+  - File persistence works, but a database-backed setup will be more stable for later growth
+- [ ] Real cloud rollout has not started yet
+  - Domain binding, ICP, and deployment wiring are still pending
 
 ## Main Phases
 
 ### Phase 1. Planning and Architecture
 
 - [x] Separate the new website from the old blog repository
-- [x] Create independent workspace folders
-- [x] Confirm version 1 core direction
+- [x] Create an independent workspace
 - [x] Confirm tech stack
-- [ ] Finalize a tighter V1 feature boundary
+- [x] Add baseline documentation
+- [ ] Tighten the V1 production boundary even further if needed
 
-### Phase 2. Infrastructure Preparation
+### Phase 2. Local Development Environment
 
-- [ ] Choose cloud vendor and server product
-- [ ] Select region
-- [ ] Purchase server
-- [ ] Register domain
-- [ ] Configure DNS resolution
-- [ ] Prepare ICP filing materials
-- [ ] Submit ICP filing
-- [ ] Wait for filing approval
-
-Recommended baseline:
-
-- Server: low-cost mainland cloud server
-- OS: Ubuntu 24.04 LTS
-- Region: Guangzhou preferred
-- Domain: `.com` or `.cn`
-
-### Phase 3. Local Development Environment
-
-- [x] Initialize frontend project in `F:\website\frontend`
-- [x] Initialize backend project in `F:\website\backend`
+- [x] Initialize frontend in `F:\website\frontend`
+- [x] Initialize backend in `F:\website\backend`
 - [x] Initialize deployment files in `F:\website\deploy`
-- [x] Create documentation in `F:\website\docs`
-- [x] Create upload test directory in `F:\website\uploads`
+- [x] Initialize working documentation
 
-### Phase 4. Frontend Development
+### Phase 3. Frontend Development
 
 - [x] Design homepage
-- [x] Design algorithm study page
 - [x] Design blog page
+- [x] Design algorithm study page
 - [x] Design about page
-- [ ] Design article detail page
-- [ ] Finish responsive/detail refinement
-- [ ] Prepare ICP footer area for future filing number display
-- [ ] Optimize static resource loading for low-bandwidth access
+- [x] Build dedicated study notes page and detail page
+- [x] Build study note filtering, previews, and annotation UX
+- [x] Build dedicated algorithm roadmap page
+- [ ] Add real article detail page
+- [ ] Finish footer filing area
+- [ ] Finish remaining responsive polish
 
-### Phase 5. Backend Development
+### Phase 4. Backend Development
 
-- [x] Create backend framework skeleton
+- [x] Create backend skeleton
 - [x] Implement health check endpoint
-- [x] Implement basic check-in endpoints
-- [ ] Define persistent storage model
-- [ ] Implement upload API
-- [ ] Implement note list/detail API
-- [ ] Implement annotation create/read API
+- [x] Implement check-in endpoints
+- [x] Implement note upload / list / detail APIs
+- [x] Implement note annotation create / read / update / delete APIs
+- [x] Implement roadmap persistence APIs
+- [ ] Introduce SQLite-backed persistence
+- [ ] Add blog content APIs
 
-### Phase 6. Data and Storage Design
+### Phase 5. Storage and Data
 
-- [ ] Decide the first production-ready database setup
-- [ ] Replace in-memory check-in storage with SQLite or another chosen V1 store
-- [ ] Design file storage layout
-- [ ] Design note metadata format
-- [ ] Design annotation data structure
-- [ ] Design backup strategy
+- [x] Add file-based persistence for notes
+- [x] Add file-based persistence for annotations
+- [x] Add file-based persistence for check-ins
+- [x] Add file-based persistence for roadmap
+- [ ] Normalize all storage paths for deployment
+- [ ] Define SQLite migration path
+- [ ] Define backup strategy for deployment
 
-### Phase 7. Deployment and Launch
+### Phase 6. Deployment and Launch
 
 - [ ] Fix frontend production build
-- [ ] Verify deployable frontend output
-- [ ] Upload frontend build output
-- [ ] Upload backend service
-- [ ] Configure Caddy reverse proxy
+- [ ] Freeze deployable frontend output
+- [ ] Package and upload backend service
+- [ ] Configure Caddy
 - [ ] Configure HTTPS
 - [ ] Configure service auto-start
-- [ ] Bind domain and test public access
+- [ ] Bind domain and verify public access
+- [ ] Start ICP filing process
 
 ## Next Step Plan
 
-### Priority 0: unblock the development path
+### Priority 0: unblock deployment
 
 1. Fix the Nuxt production build issue so the frontend can actually be deployed.
-2. Freeze the V1 frontend scope: keep Home / Blog / Algorithms / About, and add only one article detail template for now.
-3. Add ICP filing footer placeholder and finish the remaining responsive cleanup.
+2. Normalize backend storage paths so note and annotation data stop depending on the launch directory.
+3. Add the footer filing placeholder and finish the remaining responsive polish.
 
-### Priority 1: make backend data real
+### Priority 0: strengthen data layer
 
-1. Replace the current in-memory check-in repository with persistent storage.
-2. Finalize the V1 storage decision, with SQLite as the default target.
-3. Keep the existing health and check-in API stable while adding storage migration.
+1. Move check-ins and future core data toward SQLite.
+2. Decide the exact SQLite file location and migration path.
+3. Keep current APIs stable while changing the persistence layer behind them.
 
-### Priority 1: prepare the next backend slice
+### Priority 1: finish the blog content line
 
-1. Design note metadata structure.
-2. Design upload directory rules under `uploads/`.
-3. Implement the first upload API, then note list/detail API.
+1. Add the article detail page.
+2. Add backend content/detail endpoints for blog entries.
+3. Turn the blog section from a showcase page into a real readable flow.
 
-### Priority 0 outside code
+### Priority 1: continue polishing study notes
 
-1. Decide cloud vendor, region, and baseline server spec.
-2. Register the domain.
-3. Start ICP filing preparation as early as possible because approval will take time.
+1. Improve compatibility for old PDF annotations that were saved before selection rectangles existed.
+2. Continue refining annotation positioning and microcopy.
+3. Add search / file-type filters / management polish if needed.
 
 ## Recommended Immediate Actions
 
-These are the next 5 concrete actions in order:
-
-1. Investigate and fix the Nuxt production build failure.
-2. Add the article detail page and filing footer placeholder.
-3. Introduce SQLite-backed persistence for check-ins.
-4. Define note/upload/annotation data models in the backend.
-5. Finalize server + domain + filing decisions.
+1. Fix the Nitro production build failure in `npm run build`.
+2. Convert note storage to a fixed absolute path before deployment.
+3. Add blog article detail page and content API.
+4. Move check-ins to SQLite-backed persistence.
+5. Start organizing server directories, domain setup, and filing preparation.
 
 ## Decision Notes
 
-- Server vendor: TBD
-- Server region: Guangzhou preferred
-- Domain: TBD
-- Filing subject: personal filing preferred
-- Frontend framework: Nuxt
-- Backend framework: Spring Boot
-- Database: SQLite preferred for V1, not implemented yet
-- Deployment method: Caddy + frontend/backend split
+| Item | Current Value | Notes |
+| --- | --- | --- |
+| Cloud server | Purchased | Ubuntu 22.04, 2 vCPU / 2 GiB / 40 GiB |
+| Domain | TBD | `.com` or `.cn` recommended |
+| Filing subject | TBD | Personal filing preferred |
+| Frontend framework | Nuxt | Local dev is working |
+| Backend framework | Spring Boot | Core APIs and file persistence are working |
+| Database | SQLite preferred | Not implemented yet |
+| Current note storage | File persistence | Currently under `backend/uploads/notes` |
+| Current annotation storage | File persistence | Currently under `backend/uploads/notes/annotations.json` |
+| Deployment method | Caddy + frontend/backend split | Templates exist, live rollout not started |
 
 ## Verification Notes
 
+### 2026-04-21
+
+- Verified backend `mvn test` passes
+- Verified frontend `nuxi prepare` passes multiple times during recent UI changes
+- Verified uploaded notes, metadata, and annotations currently land under `F:\website\backend\uploads\notes`
+- Verified first usable Markdown and PDF annotation flow exists
+- Verified roadmap editing and persistence are in place
+
 ### 2026-04-20
 
-- Confirmed that frontend first-version pages already exist in the codebase
-- Confirmed backend health and check-in APIs already exist in the codebase
-- Confirmed backend `mvn test` can pass in a writable environment
-- Confirmed frontend `npm run build` is still blocked at Nitro packaging
+- Confirmed first-version frontend pages already existed in the codebase
+- Confirmed backend health and check-in APIs already existed in the codebase
+- Confirmed backend `mvn test` passed in a writable environment
+- Confirmed frontend `npm run build` was still blocked in Nitro packaging
 
 ## Change Log
+
+### 2026-04-21
+
+- Completed study note upload, listing, tag filtering, detail page, and upload heatmap
+- Completed Markdown rendering improvements, code highlighting, and formula rendering
+- Completed Markdown annotation creation, linking, editing, and deletion
+- Completed PDF original preview, PDF.js annotation mode, text-highlight annotations, and anchor annotations
+- Completed algorithm roadmap standalone page, editing, and drag-and-drop movement
+- Completed file persistence for notes and annotations
+- Audited real storage paths and updated project progress documentation
 
 ### 2026-04-20
 
 - Created new workspace at `F:\website`
-- Added initial progress documentation
+- Added initial Chinese and English progress docs
 - Initialized Nuxt frontend skeleton and installed dependencies
 - Initialized Spring Boot backend skeleton
 - Added deployment templates
-- Implemented first frontend pages: Home, Blog, Algorithms, About
+- Implemented Home, Blog, Algorithms, and About first versions
 - Added first backend APIs for health and check-ins
 - Verified backend tests and identified the current frontend production build blocker
-- Updated project progress to reflect actual code status and next execution plan

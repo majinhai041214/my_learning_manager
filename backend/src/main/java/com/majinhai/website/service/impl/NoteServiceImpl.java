@@ -3,7 +3,9 @@ package com.majinhai.website.service.impl;
 import com.majinhai.website.config.StorageProperties;
 import com.majinhai.website.exception.BusinessException;
 import com.majinhai.website.model.dto.StudyNoteResponse;
+import com.majinhai.website.model.dto.StudyNoteUpdateRequest;
 import com.majinhai.website.model.entity.StudyNote;
+import com.majinhai.website.repository.NoteAnnotationRepository;
 import com.majinhai.website.repository.StudyNoteRepository;
 import com.majinhai.website.service.NoteService;
 import java.io.IOException;
@@ -31,10 +33,16 @@ public class NoteServiceImpl implements NoteService {
     );
 
     private final StudyNoteRepository studyNoteRepository;
+    private final NoteAnnotationRepository noteAnnotationRepository;
     private final Path notesDirectory;
 
-    public NoteServiceImpl(StudyNoteRepository studyNoteRepository, StorageProperties storageProperties) {
+    public NoteServiceImpl(
+            StudyNoteRepository studyNoteRepository,
+            NoteAnnotationRepository noteAnnotationRepository,
+            StorageProperties storageProperties
+    ) {
         this.studyNoteRepository = studyNoteRepository;
+        this.noteAnnotationRepository = noteAnnotationRepository;
         this.notesDirectory = Path.of(storageProperties.getBaseDir(), storageProperties.getNotesDir(), "files");
     }
 
@@ -92,6 +100,30 @@ public class NoteServiceImpl implements NoteService {
     }
 
     @Override
+    public StudyNoteResponse update(Long id, StudyNoteUpdateRequest request) {
+        StudyNote note = findNote(id);
+        note.setTitle(normalizeTitle(request.title(), note.getOriginalFilename()));
+        note.setDescription(normalizeDescription(request.description()));
+        note.setTags(normalizeTags(request.tags()));
+        return toResponse(studyNoteRepository.save(note));
+    }
+
+    @Override
+    public void delete(Long id) {
+        StudyNote note = findNote(id);
+        Path resourcePath = notesDirectory.resolve(note.getStoredFilename()).normalize();
+
+        noteAnnotationRepository.deleteByNoteId(id);
+        studyNoteRepository.deleteById(id);
+
+        try {
+            Files.deleteIfExists(resourcePath);
+        } catch (IOException exception) {
+            throw new BusinessException("NOTE_DELETE_FILE_FAILED", "学习笔记记录已删除，但文件清理失败");
+        }
+    }
+
+    @Override
     public Resource loadAsResource(Long id) {
         StudyNote note = findNote(id);
         Path resourcePath = notesDirectory.resolve(note.getStoredFilename()).normalize();
@@ -145,6 +177,44 @@ public class NoteServiceImpl implements NoteService {
             return normalized.substring(0, 24).trim();
         }
         return normalized;
+    }
+
+    private String normalizeTitle(String title, String originalFilename) {
+        String fallback = stripExtension(originalFilename);
+        if (!StringUtils.hasText(title)) {
+            return fallback;
+        }
+        String normalized = title.trim().replaceAll("\\s+", " ");
+        if (!StringUtils.hasText(normalized)) {
+            return fallback;
+        }
+        return normalized.length() > 80 ? normalized.substring(0, 80).trim() : normalized;
+    }
+
+    private String normalizeDescription(String description) {
+        if (!StringUtils.hasText(description)) {
+            return null;
+        }
+        String normalized = description.trim().replaceAll("\\s+", " ");
+        if (!StringUtils.hasText(normalized)) {
+            return null;
+        }
+        return normalized.length() > 240 ? normalized.substring(0, 240).trim() : normalized;
+    }
+
+    private List<String> normalizeTags(List<String> tags) {
+        if (tags == null || tags.isEmpty()) {
+            return List.of();
+        }
+
+        return tags.stream()
+                .filter(Objects::nonNull)
+                .map(this::normalizeTag)
+                .filter(StringUtils::hasText)
+                .collect(java.util.stream.Collectors.collectingAndThen(
+                        java.util.stream.Collectors.toCollection(LinkedHashSet::new),
+                        List::copyOf
+                ));
     }
 
     private String extractExtension(String filename) {

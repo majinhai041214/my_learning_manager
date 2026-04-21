@@ -69,6 +69,23 @@ public class FileNoteAnnotationRepository implements NoteAnnotationRepository {
         throw new BusinessException("NOTE_ANNOTATION_NOT_FOUND", "未找到对应的笔记批注");
     }
 
+    @Override
+    public synchronized void deleteById(Long id) {
+        boolean removed = storage.removeIf(annotation -> annotation.getId() != null && annotation.getId().equals(id));
+        if (!removed) {
+            throw new BusinessException("NOTE_ANNOTATION_NOT_FOUND", "未找到对应的笔记批注");
+        }
+        persist();
+    }
+
+    @Override
+    public synchronized void deleteByNoteId(Long noteId) {
+        boolean removed = storage.removeIf(annotation -> annotation.getNoteId() != null && annotation.getNoteId().equals(noteId));
+        if (removed) {
+            persist();
+        }
+    }
+
     private void loadExistingData() {
         try {
             Files.createDirectories(metadataFile.getParent());

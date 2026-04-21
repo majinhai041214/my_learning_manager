@@ -13,4 +13,8 @@ public interface NoteAnnotationRepository {
     NoteAnnotation save(NoteAnnotation annotation);
 
     NoteAnnotation update(NoteAnnotation annotation);
+
+    void deleteById(Long id);
+
+    void deleteByNoteId(Long noteId);
 }

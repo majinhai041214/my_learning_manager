@@ -31,10 +31,17 @@ interface NoteAnnotation {
   pageNumber: number | null
   anchorX: number | null
   anchorY: number | null
+  selectionRects: Array<{
+    x: number
+    y: number
+    width: number
+    height: number
+  }>
   createdAt: string
 }
 
 const route = useRoute()
+const router = useRouter()
 const runtimeConfig = useRuntimeConfig()
 const apiBase = runtimeConfig.public.apiBase
 const noteId = route.params.id
@@ -66,6 +73,7 @@ const supportsAnnotations = computed(() => Boolean(note.value && (isMarkdown.val
 const noteText = ref('')
 const previewError = ref('')
 const previewContainer = ref<HTMLElement | null>(null)
+const annotationSidebarRef = ref<HTMLElement | null>(null)
 const pdfViewerContainer = ref<HTMLDivElement | null>(null)
 const pdfViewerPages = ref<HTMLDivElement | null>(null)
 const pdfRenderLoading = ref(false)
@@ -85,14 +93,26 @@ const annotationSuccess = ref('')
 const selectedQuote = ref('')
 const selectedPageNumber = ref<number | null>(null)
 const selectedAnchor = ref<{ pageNumber: number, x: number, y: number } | null>(null)
+const selectedPdfSelectionRects = ref<Array<{ x: number, y: number, width: number, height: number }>>([])
 const showAnnotationComposer = ref(false)
 const editingAnnotationId = ref<number | null>(null)
 const savingAnnotation = ref(false)
+const deletingAnnotationId = ref<number | null>(null)
+const noteEditMode = ref(false)
+const savingNoteMeta = ref(false)
+const deletingNote = ref(false)
+const noteManagementError = ref('')
+const noteManagementSuccess = ref('')
 const annotationForm = reactive({
   comment: ''
 })
 const editingAnnotationForm = reactive({
   comment: ''
+})
+const noteMetaForm = reactive({
+  title: '',
+  description: '',
+  tags: ''
 })
 
 const renderedPreview = computed(() => {
@@ -144,6 +164,12 @@ function renderAnnotationComment(comment: string) {
   return renderMarkdownToHtml(comment)
 }
 
+function syncNoteMetaForm() {
+  noteMetaForm.title = note.value?.title ?? ''
+  noteMetaForm.description = note.value?.description ?? ''
+  noteMetaForm.tags = note.value?.tags.join(', ') ?? ''
+}
+
 function annotationLocationLabel(annotation: NoteAnnotation) {
   return annotation.pageNumber ? `PDF 第 ${annotation.pageNumber} 页` : '文档批注'
 }
@@ -152,7 +178,22 @@ function annotationDisplayQuote(annotation: NoteAnnotation) {
   return annotation.quotedText || 'PDF 锚点批注'
 }
 
+function shouldOpenAnnotationFromClick(event: MouseEvent, requireModifier = true) {
+  return !requireModifier || event.ctrlKey || event.metaKey
+}
+
+function focusAnnotationInSidebar(annotationId: number) {
+  pendingFocusTarget.value = 'sidebar'
+  selectedAnnotationId.value = annotationId
+}
+
 function scrollToPdfAnnotation(annotationId: number) {
+  const highlight = pdfViewerContainer.value?.querySelector(`[data-annotation-id="${annotationId}"]`)
+  if (highlight instanceof HTMLElement) {
+    highlight.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+    return
+  }
+
   const anchor = pdfViewerContainer.value?.querySelector(`[data-annotation-anchor-id="${annotationId}"]`)
   if (anchor instanceof HTMLElement) {
     anchor.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
@@ -183,6 +224,68 @@ async function loadAnnotations() {
   }
 }
 
+async function saveNoteMeta() {
+  if (!note.value) {
+    return
+  }
+
+  savingNoteMeta.value = true
+  noteManagementError.value = ''
+  noteManagementSuccess.value = ''
+
+  try {
+    const updated = await $fetch<ApiResponse<StudyNote>>(`${apiBase}/api/notes/${note.value.id}`, {
+      method: 'PUT',
+      body: {
+        title: noteMetaForm.title,
+        description: noteMetaForm.description,
+        tags: noteMetaForm.tags
+          .split(',')
+          .map(tag => tag.trim())
+          .filter(Boolean)
+      }
+    })
+    if (response.value) {
+      response.value = {
+        ...response.value,
+        data: updated.data
+      }
+    }
+    noteManagementSuccess.value = '笔记信息已更新。'
+    noteEditMode.value = false
+    syncNoteMetaForm()
+  } catch (saveFailure: any) {
+    noteManagementError.value = saveFailure?.data?.message ?? '更新笔记信息失败，请稍后重试。'
+  } finally {
+    savingNoteMeta.value = false
+  }
+}
+
+async function deleteNote() {
+  if (!note.value) {
+    return
+  }
+
+  if (!window.confirm('确定要删除这篇学习笔记吗？文件本体和相关批注都会一起删除。')) {
+    return
+  }
+
+  deletingNote.value = true
+  noteManagementError.value = ''
+  noteManagementSuccess.value = ''
+
+  try {
+    await $fetch<ApiResponse<null>>(`${apiBase}/api/notes/${note.value.id}`, {
+      method: 'DELETE'
+    })
+    await router.push('/notes')
+  } catch (deleteFailure: any) {
+    noteManagementError.value = deleteFailure?.data?.message ?? '删除学习笔记失败，请稍后重试。'
+  } finally {
+    deletingNote.value = false
+  }
+}
+
 function normalizeSelection(value: string) {
   return value.replace(/\s+/g, ' ').trim()
 }
@@ -191,8 +294,21 @@ function clearSelectionState() {
   selectedQuote.value = ''
   selectedPageNumber.value = null
   selectedAnchor.value = null
+  selectedPdfSelectionRects.value = []
   annotationForm.comment = ''
   showAnnotationComposer.value = false
+}
+
+function startEditingNoteMeta() {
+  syncNoteMetaForm()
+  noteManagementError.value = ''
+  noteManagementSuccess.value = ''
+  noteEditMode.value = true
+}
+
+function cancelEditingNoteMeta() {
+  noteEditMode.value = false
+  noteManagementError.value = ''
 }
 
 function startEditingAnnotation(annotation: NoteAnnotation) {
@@ -230,11 +346,82 @@ function handlePreviewSelection() {
   selectedPageNumber.value = null
   selectedAnchor.value = null
 
-  const quote = normalizeSelection(selection.toString())
+  const isCodeSelection = Boolean(commonElement.closest('pre, code'))
+  const quote = isCodeSelection
+    ? selection.toString().trim()
+    : normalizeSelection(selection.toString())
   if (!quote) {
     return
   }
 
+  selectedQuote.value = quote.length > 300 ? quote.slice(0, 300) : quote
+  annotationForm.comment = ''
+  annotationSuccess.value = ''
+  annotationError.value = ''
+  showAnnotationComposer.value = true
+}
+
+function handlePdfTextSelection() {
+  if (!note.value || !isPdf.value || !pdfViewerContainer.value) {
+    return
+  }
+
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+    return
+  }
+
+  const range = selection.getRangeAt(0)
+  const commonNode = range.commonAncestorContainer
+  const commonElement = commonNode.nodeType === Node.TEXT_NODE ? commonNode.parentElement : commonNode as Element | null
+
+  if (!commonElement || !pdfViewerContainer.value.contains(commonElement)) {
+    return
+  }
+
+  const startPage = selection.anchorNode instanceof Node
+    ? (selection.anchorNode.nodeType === Node.TEXT_NODE ? selection.anchorNode.parentElement : selection.anchorNode as Element | null)?.closest('.page')
+    : null
+  const endPage = selection.focusNode instanceof Node
+    ? (selection.focusNode.nodeType === Node.TEXT_NODE ? selection.focusNode.parentElement : selection.focusNode as Element | null)?.closest('.page')
+    : null
+
+  if (!(startPage instanceof HTMLElement) || !(endPage instanceof HTMLElement) || startPage !== endPage) {
+    return
+  }
+
+  const quote = selection.toString().trim()
+  if (!quote) {
+    return
+  }
+
+  const pageNumber = Number(startPage.dataset.pageNumber ?? '')
+  if (!Number.isFinite(pageNumber)) {
+    return
+  }
+
+  const selectionRect = range.getBoundingClientRect()
+  const fallbackRect = range.getClientRects()[0]
+  const pageRect = startPage.getBoundingClientRect()
+  const activeRect = selectionRect.width > 0 && selectionRect.height > 0 ? selectionRect : fallbackRect
+  const selectionRects = Array.from(range.getClientRects())
+    .filter(rect => rect.width > 0 && rect.height > 0)
+    .map((rect) => ({
+      x: Math.min(Math.max((rect.left - pageRect.left) / pageRect.width, 0), 1),
+      y: Math.min(Math.max((rect.top - pageRect.top) / pageRect.height, 0), 1),
+      width: Math.min(rect.width / pageRect.width, 1),
+      height: Math.min(rect.height / pageRect.height, 1)
+    }))
+
+  selectedPageNumber.value = pageNumber
+  selectedAnchor.value = activeRect
+    ? {
+        pageNumber,
+        x: Math.min(Math.max(((activeRect.left + activeRect.width / 2) - pageRect.left) / pageRect.width, 0), 1),
+        y: Math.min(Math.max(((activeRect.top + activeRect.height / 2) - pageRect.top) / pageRect.height, 0), 1)
+      }
+    : null
+  selectedPdfSelectionRects.value = selectionRects
   selectedQuote.value = quote.length > 300 ? quote.slice(0, 300) : quote
   annotationForm.comment = ''
   annotationSuccess.value = ''
@@ -260,6 +447,7 @@ function beginPdfAnchorAnnotation(event: MouseEvent, pageNumber: number) {
 
   selectedPageNumber.value = pageNumber
   selectedAnchor.value = { pageNumber, x, y }
+  selectedPdfSelectionRects.value = []
   selectedQuote.value = ''
   annotationForm.comment = ''
   annotationSuccess.value = ''
@@ -272,10 +460,10 @@ async function saveAnnotation() {
     return
   }
 
-  const hasMarkdownQuote = Boolean(selectedQuote.value)
-  const hasPdfAnchor = Boolean(isPdf.value && selectedPageNumber.value && selectedAnchor.value)
+  const hasTextQuote = Boolean(selectedQuote.value)
+  const hasPdfAnchor = Boolean(isPdf.value && selectedPageNumber.value && selectedAnchor.value && !selectedQuote.value)
 
-  if (!hasMarkdownQuote && !hasPdfAnchor) {
+  if (!hasTextQuote && !hasPdfAnchor) {
     annotationError.value = '请先选择需要批注的内容。'
     return
   }
@@ -288,11 +476,13 @@ async function saveAnnotation() {
     const annotationResponse = await $fetch<ApiResponse<NoteAnnotation>>(`${apiBase}/api/notes/${note.value.id}/annotations`, {
       method: 'POST',
       body: {
-        quotedText: selectedQuote.value || 'PDF 锚点批注',
+        quotedText: selectedQuote.value,
         comment: annotationForm.comment,
         pageNumber: isPdf.value ? selectedPageNumber.value : null,
         anchorX: isPdf.value ? selectedAnchor.value?.x ?? null : null,
         anchorY: isPdf.value ? selectedAnchor.value?.y ?? null : null
+        ,
+        selectionRects: isPdf.value ? selectedPdfSelectionRects.value : []
       }
     })
 
@@ -309,6 +499,51 @@ async function saveAnnotation() {
     annotationError.value = saveFailure?.data?.message ?? '保存批注失败，请稍后重试。'
   } finally {
     savingAnnotation.value = false
+  }
+}
+
+async function deleteAnnotation(annotation: NoteAnnotation) {
+  if (!note.value) {
+    return
+  }
+
+  if (!window.confirm('确定要删除这条批注吗？删除后将无法恢复。')) {
+    return
+  }
+
+  deletingAnnotationId.value = annotation.id
+  annotationError.value = ''
+  annotationSuccess.value = ''
+
+  try {
+    await $fetch<ApiResponse<null>>(`${apiBase}/api/notes/${note.value.id}/annotations/${annotation.id}`, {
+      method: 'DELETE'
+    })
+
+    annotations.value = annotations.value.filter(item => item.id !== annotation.id)
+    if (selectedAnnotationId.value === annotation.id) {
+      selectedAnnotationId.value = null
+    }
+    if (editingAnnotationId.value === annotation.id) {
+      cancelEditingAnnotation()
+    }
+    await loadAnnotations()
+    annotationSuccess.value = '批注已删除。'
+    await nextTick()
+    if (isMarkdown.value) {
+      syncMarkdownPreviewHtml()
+    } else if (isPdf.value) {
+      syncPdfAnchorOverlays()
+    }
+  } catch (deleteFailure: any) {
+    const statusCode = deleteFailure?.status ?? deleteFailure?.response?.status
+    if (statusCode === 404 || statusCode === 405) {
+      annotationError.value = '当前后端似乎还没有加载删除批注接口，先重启本地后端后再试一次。'
+    } else {
+      annotationError.value = deleteFailure?.data?.message ?? '删除批注失败，请稍后重试。'
+    }
+  } finally {
+    deletingAnnotationId.value = null
   }
 }
 
@@ -331,7 +566,8 @@ async function updateAnnotation(annotation: NoteAnnotation) {
           comment: editingAnnotationForm.comment,
           pageNumber: annotation.pageNumber,
           anchorX: annotation.anchorX,
-          anchorY: annotation.anchorY
+          anchorY: annotation.anchorY,
+          selectionRects: annotation.selectionRects
         }
       }
     )
@@ -355,14 +591,158 @@ function createAnnotationMark(annotation: NoteAnnotation) {
   const mark = document.createElement('mark')
   mark.className = `note-annotation-highlight${selectedAnnotationId.value === annotation.id ? ' is-active' : ''}`
   mark.dataset.annotationId = String(annotation.id)
-  mark.title = annotation.comment
-  mark.addEventListener('click', (event) => {
+  const requiresModifier = Boolean(annotation.pageNumber)
+  mark.title = requiresModifier
+    ? `${annotation.comment}\nCtrl/Cmd + 单击可跳转到右侧批注`
+    : `${annotation.comment}\n单击可跳转到右侧批注`
+  mark.addEventListener('click', (event: MouseEvent) => {
     event.preventDefault()
     event.stopPropagation()
-    pendingFocusTarget.value = 'sidebar'
-    selectedAnnotationId.value = annotation.id
+    if (shouldOpenAnnotationFromClick(event, requiresModifier)) {
+      focusAnnotationInSidebar(annotation.id)
+    }
   })
   return mark
+}
+
+function collectHighlightableTextNodes(root: HTMLElement, options?: { textLayerOnly?: boolean }) {
+  const textNodes: Text[] = []
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parentElement = node.parentElement
+      if (!parentElement) {
+        return NodeFilter.FILTER_REJECT
+      }
+      if (parentElement.closest('mark')) {
+        return NodeFilter.FILTER_REJECT
+      }
+      if (options?.textLayerOnly && !parentElement.closest('.textLayer')) {
+        return NodeFilter.FILTER_SKIP
+      }
+      return node.textContent ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP
+    }
+  })
+
+  let currentNode = walker.nextNode() as Text | null
+  while (currentNode) {
+    textNodes.push(currentNode)
+    currentNode = walker.nextNode() as Text | null
+  }
+
+  return textNodes
+}
+
+function findRawRange(root: HTMLElement, quote: string, options?: { textLayerOnly?: boolean }) {
+  const textNodes = collectHighlightableTextNodes(root, options)
+  if (!textNodes.length) {
+    return null
+  }
+
+  let fullText = ''
+  const nodeRanges = textNodes.map((node) => {
+    const start = fullText.length
+    fullText += node.textContent ?? ''
+    return {
+      node,
+      start,
+      end: fullText.length
+    }
+  })
+
+  const startIndex = fullText.indexOf(quote)
+  if (startIndex < 0) {
+    return null
+  }
+
+  const endIndex = startIndex + quote.length
+  const startEntry = nodeRanges.find(entry => startIndex >= entry.start && startIndex < entry.end)
+  const endEntry = nodeRanges.find(entry => endIndex > entry.start && endIndex <= entry.end)
+
+  if (!startEntry || !endEntry) {
+    return null
+  }
+
+  const range = document.createRange()
+  range.setStart(startEntry.node, startIndex - startEntry.start)
+  range.setEnd(endEntry.node, endIndex - endEntry.start)
+  return range
+}
+
+function findRawRangeNearAnchor(
+  root: HTMLElement,
+  quote: string,
+  anchor: { x: number, y: number },
+  options?: { textLayerOnly?: boolean }
+) {
+  const textNodes = collectHighlightableTextNodes(root, options)
+  if (!textNodes.length) {
+    return null
+  }
+
+  let fullText = ''
+  const nodeRanges = textNodes.map((node) => {
+    const start = fullText.length
+    fullText += node.textContent ?? ''
+    return {
+      node,
+      start,
+      end: fullText.length
+    }
+  })
+
+  const pageRect = root.closest('.page')?.getBoundingClientRect()
+  if (!pageRect) {
+    return findRawRange(root, quote, options)
+  }
+
+  const targetX = pageRect.left + pageRect.width * anchor.x
+  const targetY = pageRect.top + pageRect.height * anchor.y
+  const matches: Array<{ range: Range, distance: number }> = []
+
+  let searchStart = 0
+  while (searchStart < fullText.length) {
+    const startIndex = fullText.indexOf(quote, searchStart)
+    if (startIndex < 0) {
+      break
+    }
+
+    const endIndex = startIndex + quote.length
+    const startEntry = nodeRanges.find(entry => startIndex >= entry.start && startIndex < entry.end)
+    const endEntry = nodeRanges.find(entry => endIndex > entry.start && endIndex <= entry.end)
+
+    if (startEntry && endEntry) {
+      const range = document.createRange()
+      range.setStart(startEntry.node, startIndex - startEntry.start)
+      range.setEnd(endEntry.node, endIndex - endEntry.start)
+      const rect = range.getBoundingClientRect()
+      const centerX = rect.left + rect.width / 2
+      const centerY = rect.top + rect.height / 2
+      matches.push({
+        range,
+        distance: Math.hypot(centerX - targetX, centerY - targetY)
+      })
+    }
+
+    searchStart = startIndex + quote.length
+  }
+
+  if (!matches.length) {
+    return null
+  }
+
+  matches.sort((left, right) => left.distance - right.distance)
+  return matches[0]?.range ?? null
+}
+
+function wrapAnnotationRange(range: Range, annotation: NoteAnnotation) {
+  const mark = createAnnotationMark(annotation)
+  try {
+    range.surroundContents(mark)
+  } catch {
+    const contents = range.extractContents()
+    mark.appendChild(contents)
+    range.insertNode(mark)
+  }
 }
 
 function clearAnnotationMarks(root: ParentNode) {
@@ -376,9 +756,20 @@ function clearAnnotationMarks(root: ParentNode) {
 }
 
 function applyAnnotationHighlight(root: HTMLElement, annotation: NoteAnnotation, options?: { textLayerOnly?: boolean }) {
+  const rawQuote = annotation.quotedText.trim()
   const quote = normalizeSelection(annotation.quotedText)
   if (!quote) {
     return
+  }
+
+  if (rawQuote) {
+    const rawRange = annotation.anchorX !== null && annotation.anchorY !== null
+      ? findRawRangeNearAnchor(root, rawQuote, { x: annotation.anchorX, y: annotation.anchorY }, options)
+      : findRawRange(root, rawQuote, options)
+    if (rawRange) {
+      wrapAnnotationRange(rawRange, annotation)
+      return
+    }
   }
 
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
@@ -388,9 +779,6 @@ function applyAnnotationHighlight(root: HTMLElement, annotation: NoteAnnotation,
         return NodeFilter.FILTER_REJECT
       }
       if (parentElement.closest('mark')) {
-        return NodeFilter.FILTER_REJECT
-      }
-      if (!options?.textLayerOnly && parentElement.closest('pre, code')) {
         return NodeFilter.FILTER_REJECT
       }
       if (options?.textLayerOnly && !parentElement.closest('.textLayer')) {
@@ -415,8 +803,7 @@ function applyAnnotationHighlight(root: HTMLElement, annotation: NoteAnnotation,
         const range = document.createRange()
         range.setStart(currentNode, start)
         range.setEnd(currentNode, end)
-        const mark = createAnnotationMark(annotation)
-        range.surroundContents(mark)
+        wrapAnnotationRange(range, annotation)
         return
       }
     }
@@ -448,6 +835,55 @@ function syncPdfAnchorOverlays() {
 
   const pageElements = pdfViewerContainer.value.querySelectorAll<HTMLElement>('.page')
   for (const pageElement of pageElements) {
+    let highlightLayer = pageElement.querySelector<HTMLElement>('.pdf-page-highlight-layer')
+    if (!highlightLayer) {
+      highlightLayer = document.createElement('div')
+      highlightLayer.className = 'pdf-page-highlight-layer'
+      pageElement.appendChild(highlightLayer)
+    }
+    highlightLayer.innerHTML = ''
+
+    const textLayer = pageElement.querySelector<HTMLElement>('.textLayer')
+    if (textLayer) {
+      clearAnnotationMarks(textLayer)
+
+      const pageAnnotations = annotations.value.filter(annotation =>
+        annotation.pageNumber === Number(pageElement.dataset.pageNumber ?? '')
+        && normalizeSelection(annotation.quotedText)
+      )
+
+      for (const annotation of pageAnnotations) {
+        if (annotation.selectionRects?.length) {
+          for (const rect of annotation.selectionRects) {
+            const segment = document.createElement('button')
+            segment.type = 'button'
+            segment.className = `pdf-selection-highlight${selectedAnnotationId.value === annotation.id ? ' active' : ''}`
+            segment.dataset.annotationId = String(annotation.id)
+            segment.dataset.pdfOverlayInteractive = 'true'
+            segment.dataset.shortcutHint = 'Ctrl+点击查看批注'
+            segment.style.left = `${rect.x * 100}%`
+            segment.style.top = `${rect.y * 100}%`
+            segment.style.width = `${rect.width * 100}%`
+            segment.style.height = `${rect.height * 100}%`
+            segment.addEventListener('mousedown', (event: MouseEvent) => {
+              event.stopPropagation()
+            })
+            segment.addEventListener('click', (event: MouseEvent) => {
+              event.preventDefault()
+              event.stopPropagation()
+              if (shouldOpenAnnotationFromClick(event)) {
+                focusAnnotationInSidebar(annotation.id)
+              }
+            })
+            highlightLayer.appendChild(segment)
+          }
+          continue
+        }
+
+        applyAnnotationHighlight(textLayer, annotation, { textLayerOnly: true })
+      }
+    }
+
     let layer = pageElement.querySelector<HTMLElement>('.pdf-page-anchor-layer')
     if (!layer) {
       layer = document.createElement('div')
@@ -465,6 +901,7 @@ function syncPdfAnchorOverlays() {
       annotation.pageNumber === pageNumber
       && annotation.anchorX !== null
       && annotation.anchorY !== null
+      && (!normalizeSelection(annotation.quotedText) || annotation.quotedText.trim() === 'PDF 锚点批注')
     )
 
     for (const annotation of pageAnnotations) {
@@ -472,14 +909,20 @@ function syncPdfAnchorOverlays() {
       anchor.type = 'button'
       anchor.className = `pdf-anchor${selectedAnnotationId.value === annotation.id ? ' active' : ''}`
       anchor.dataset.annotationAnchorId = String(annotation.id)
+      anchor.dataset.pdfOverlayInteractive = 'true'
+      anchor.dataset.shortcutHint = 'Ctrl+点击查看批注'
       anchor.style.left = `${(annotation.anchorX ?? 0.5) * 100}%`
       anchor.style.top = `${(annotation.anchorY ?? 0.5) * 100}%`
       anchor.textContent = String(annotations.value.findIndex(item => item.id === annotation.id) + 1)
-      anchor.addEventListener('click', (event) => {
+      anchor.addEventListener('mousedown', (event: MouseEvent) => {
+        event.stopPropagation()
+      })
+      anchor.addEventListener('click', (event: MouseEvent) => {
         event.preventDefault()
         event.stopPropagation()
-        pendingFocusTarget.value = 'sidebar'
-        selectedAnnotationId.value = annotation.id
+        if (shouldOpenAnnotationFromClick(event)) {
+          focusAnnotationInSidebar(annotation.id)
+        }
       })
       layer.appendChild(anchor)
     }
@@ -543,7 +986,7 @@ async function setupPdfViewer() {
       viewer: pdfViewerPages.value,
       eventBus: pdfEventBus.value,
       linkService: pdfLinkService.value,
-      textLayerMode: 0,
+      textLayerMode: 1,
       annotationMode: 0
     })
 
@@ -594,7 +1037,7 @@ watch(selectedAnnotationId, async () => {
   }
 
   if (pendingFocusTarget.value === 'sidebar') {
-    const card = document.querySelector(`[data-annotation-card-id="${selectedAnnotationId.value}"]`)
+    const card = annotationSidebarRef.value?.querySelector(`[data-annotation-card-id="${selectedAnnotationId.value}"]`)
     if (card instanceof HTMLElement) {
       card.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
@@ -655,6 +1098,7 @@ watch(selectedAnchor, async () => {
 }, { deep: true })
 
 onMounted(async () => {
+  syncNoteMetaForm()
   if (isMarkdown.value) {
     syncMarkdownPreviewHtml()
     return
@@ -699,6 +1143,74 @@ onBeforeUnmount(async () => {
         <span v-for="tag in note.tags" :key="tag" class="note-tag">{{ tag }}</span>
       </div>
 
+      <div class="content-card note-management-card">
+        <div class="note-management-head">
+          <div>
+            <p class="eyebrow">Management</p>
+            <h3>笔记信息管理</h3>
+          </div>
+          <div class="note-management-actions">
+            <button
+              v-if="!noteEditMode"
+              class="button secondary"
+              type="button"
+              @click="startEditingNoteMeta"
+            >
+              编辑信息
+            </button>
+            <button
+              class="button secondary danger-button"
+              type="button"
+              :disabled="deletingNote"
+              @click="deleteNote"
+            >
+              {{ deletingNote ? '删除中...' : '删除整篇笔记' }}
+            </button>
+          </div>
+        </div>
+
+        <div v-if="noteEditMode" class="note-management-form">
+          <label class="note-management-field">
+            <span>标题</span>
+            <input v-model="noteMetaForm.title" class="note-management-input" maxlength="80" />
+          </label>
+          <label class="note-management-field">
+            <span>描述</span>
+            <textarea
+              v-model="noteMetaForm.description"
+              class="note-management-textarea"
+              rows="3"
+              maxlength="240"
+            />
+          </label>
+          <label class="note-management-field">
+            <span>标签</span>
+            <input
+              v-model="noteMetaForm.tags"
+              class="note-management-input"
+              placeholder="用英文逗号分隔，如：图论, 动态规划, 总结"
+            />
+          </label>
+          <div class="note-management-actions">
+            <button class="button primary" type="button" :disabled="savingNoteMeta" @click="saveNoteMeta">
+              {{ savingNoteMeta ? '保存中...' : '保存笔记信息' }}
+            </button>
+            <button class="button secondary" type="button" @click="cancelEditingNoteMeta">
+              取消
+            </button>
+          </div>
+        </div>
+
+        <div v-else class="note-management-summary">
+          <p><strong>当前标题：</strong>{{ note.title }}</p>
+          <p><strong>当前描述：</strong>{{ note.description || '暂无描述' }}</p>
+          <p><strong>当前标签：</strong>{{ note.tags.length ? note.tags.join(' / ') : '暂无标签' }}</p>
+        </div>
+
+        <p v-if="noteManagementError" class="annotation-feedback error">{{ noteManagementError }}</p>
+        <p v-else-if="noteManagementSuccess" class="annotation-feedback success">{{ noteManagementSuccess }}</p>
+      </div>
+
       <div class="hero-actions">
         <a class="button primary" :href="`${apiBase}${note.viewUrl}`" target="_blank" rel="noreferrer">
           打开原文件
@@ -716,7 +1228,7 @@ onBeforeUnmount(async () => {
         <h2>{{ isPdf ? '可批注 PDF 预览' : '渲染预览' }}</h2>
         <p class="preview-copy">
           {{ isPdf
-            ? '左侧保留原始 PDF 预览，下方提供可选中的批注辅助层。你可以在辅助层选中文本，右侧保存批注并按页回看。'
+            ? '左侧保留原始 PDF 预览，下方同时支持两种 PDF 批注方式：鼠标划选文本直接高亮批注，或点击页面空白处落锚点批注。'
             : '鼠标左键选中需要批注的内容，右侧会弹出批注编辑框。保存后的批注会长期保留并在正文里高亮显示。'
           }}
         </p>
@@ -738,7 +1250,7 @@ onBeforeUnmount(async () => {
           <div class="pdf-preview-toolbar">
             <div>
               <strong>PDF 锚点模式</strong>
-              <span>上方保留稳定的原始 PDF 预览，下方是正在兼容中的页内锚点实验区</span>
+              <span>上方是稳定的原始预览，下方支持划选文本高亮，也支持点击空白处添加锚点说明</span>
             </div>
             <a class="button secondary" :href="`${apiBase}${note.viewUrl}`" target="_blank" rel="noreferrer">
               打开原 PDF
@@ -749,9 +1261,11 @@ onBeforeUnmount(async () => {
             <div
               ref="pdfViewerContainer"
               class="pdfjs-scroll-container"
+              @mouseup="handlePdfTextSelection"
               @click="
                 (() => {
                   const target = $event.target as HTMLElement | null
+                  if (target?.closest('[data-pdf-overlay-interactive], mark.note-annotation-highlight')) return
                   const page = target?.closest('.page') as HTMLElement | null
                   if (!page) return
                   const pageNumber = Number(page.dataset.pageNumber ?? '')
@@ -767,7 +1281,7 @@ onBeforeUnmount(async () => {
         </div>
       </article>
 
-      <aside class="content-card annotation-sidebar">
+      <aside ref="annotationSidebarRef" class="content-card annotation-sidebar">
         <p class="eyebrow">Annotations</p>
         <h2>文档批注</h2>
 
@@ -844,6 +1358,14 @@ onBeforeUnmount(async () => {
                 <button class="button secondary" type="button" @click.stop="cancelEditingAnnotation">
                   取消
                 </button>
+                <button
+                  class="button secondary annotation-card-button danger"
+                  type="button"
+                  :disabled="deletingAnnotationId === annotation.id"
+                  @click.stop="deleteAnnotation(annotation)"
+                >
+                  {{ deletingAnnotationId === annotation.id ? '删除中...' : '删除批注' }}
+                </button>
               </div>
             </div>
             <div v-else class="annotation-comment markdown-comment" v-html="renderAnnotationComment(annotation.comment)" />
@@ -855,6 +1377,15 @@ onBeforeUnmount(async () => {
                 @click.stop="startEditingAnnotation(annotation)"
               >
                 编辑批注
+              </button>
+              <button
+                v-if="editingAnnotationId !== annotation.id"
+                class="button secondary annotation-card-button danger"
+                type="button"
+                :disabled="deletingAnnotationId === annotation.id"
+                @click.stop="deleteAnnotation(annotation)"
+              >
+                {{ deletingAnnotationId === annotation.id ? '删除中...' : '删除批注' }}
               </button>
             </div>
             <span class="annotation-time">{{ formatAnnotationDate(annotation.createdAt) }}</span>
@@ -925,6 +1456,58 @@ onBeforeUnmount(async () => {
   gap: 18px;
   min-width: 0;
   overflow: hidden;
+}
+
+.note-management-card,
+.note-management-head,
+.note-management-actions,
+.note-management-form,
+.note-management-summary {
+  display: grid;
+  gap: 12px;
+}
+
+.note-management-head {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 18px;
+}
+
+.note-management-field {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.note-management-input,
+.note-management-textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  padding: 12px 14px;
+  font: inherit;
+}
+
+.note-management-textarea {
+  resize: vertical;
+}
+
+.note-management-summary p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.danger-button {
+  border-color: rgba(255, 107, 107, 0.28);
+  color: #ffd0d0;
+}
+
+.danger-button:hover:not(:disabled) {
+  border-color: rgba(255, 107, 107, 0.46);
+  background: rgba(255, 107, 107, 0.08);
 }
 
 .note-annotation-layout {
@@ -1049,6 +1632,74 @@ onBeforeUnmount(async () => {
   inset: 0;
   z-index: 8;
   pointer-events: none;
+}
+
+.pdfjs-shell :deep(.pdf-page-highlight-layer) {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+}
+
+.pdfjs-shell :deep(.pdf-selection-highlight) {
+  position: absolute;
+  border: 0;
+  padding: 0;
+  border-radius: 3px;
+  background: rgba(255, 211, 107, 0.4);
+  box-shadow: 0 0 0 1px rgba(255, 211, 107, 0.18);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.pdfjs-shell :deep(.pdf-selection-highlight::after),
+.pdfjs-shell :deep(.pdf-anchor::before) {
+  content: attr(data-shortcut-hint);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  transform: translate(-50%, 6px);
+  padding: 6px 10px;
+  border: 1px solid rgba(107, 211, 255, 0.24);
+  border-radius: 10px;
+  background: rgba(8, 17, 31, 0.92);
+  color: #dff6ff;
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.26);
+}
+
+.pdfjs-shell :deep(.pdf-selection-highlight:hover::after),
+.pdfjs-shell :deep(.pdf-selection-highlight:focus-visible::after),
+.pdfjs-shell :deep(.pdf-anchor:hover::before),
+.pdfjs-shell :deep(.pdf-anchor:focus-visible::before) {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.pdfjs-shell :deep(.pdf-selection-highlight.active) {
+  background: rgba(107, 211, 255, 0.4);
+  box-shadow: 0 0 0 1px rgba(107, 211, 255, 0.28);
+}
+
+.pdfjs-shell :deep(.textLayer) {
+  z-index: 6;
+}
+
+.pdfjs-shell :deep(.textLayer mark.note-annotation-highlight) {
+  background: rgba(255, 211, 107, 0.42);
+  color: inherit;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(255, 211, 107, 0.2);
+}
+
+.pdfjs-shell :deep(.textLayer mark.note-annotation-highlight.is-active) {
+  background: rgba(107, 211, 255, 0.44);
+  box-shadow: 0 0 0 1px rgba(107, 211, 255, 0.32);
 }
 
 .pdfjs-shell :deep(.pdf-anchor) {
@@ -1218,11 +1869,31 @@ onBeforeUnmount(async () => {
 
 .annotation-card-actions {
   display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
   justify-content: flex-end;
 }
 
 .annotation-card-button {
   min-width: 112px;
+  border-color: rgba(107, 211, 255, 0.26);
+  color: #dff6ff;
+  background: rgba(107, 211, 255, 0.08);
+}
+
+.annotation-card-button:hover:not(:disabled) {
+  border-color: rgba(107, 211, 255, 0.46);
+  background: rgba(107, 211, 255, 0.14);
+}
+
+.annotation-card-button.danger {
+  border-color: rgba(255, 107, 107, 0.26);
+  color: #ffc0c0;
+}
+
+.annotation-card-button.danger:hover:not(:disabled) {
+  border-color: rgba(255, 107, 107, 0.44);
+  background: rgba(255, 107, 107, 0.08);
 }
 
 .annotation-card-editor {

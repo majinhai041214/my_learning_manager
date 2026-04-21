@@ -59,6 +59,15 @@ public class FileStudyNoteRepository implements StudyNoteRepository {
         return studyNote;
     }
 
+    @Override
+    public synchronized void deleteById(Long id) {
+        boolean removed = storage.removeIf(note -> note.getId() != null && note.getId().equals(id));
+        if (!removed) {
+            throw new BusinessException("NOTE_NOT_FOUND", "未找到对应的学习笔记");
+        }
+        persist();
+    }
+
     private void loadExistingData() {
         try {
             Files.createDirectories(metadataFile.getParent());

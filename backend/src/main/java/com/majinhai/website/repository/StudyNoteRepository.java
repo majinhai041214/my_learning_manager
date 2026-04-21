@@ -11,4 +11,6 @@ public interface StudyNoteRepository {
     Optional<StudyNote> findById(Long id);
 
     StudyNote save(StudyNote studyNote);
+
+    void deleteById(Long id);
 }

@@ -4,6 +4,7 @@ import com.majinhai.website.model.dto.ApiResponse;
 import com.majinhai.website.model.dto.NoteAnnotationRequest;
 import com.majinhai.website.model.dto.NoteAnnotationResponse;
 import com.majinhai.website.model.dto.StudyNoteResponse;
+import com.majinhai.website.model.dto.StudyNoteUpdateRequest;
 import com.majinhai.website.service.NoteAnnotationService;
 import com.majinhai.website.service.NoteService;
 import java.nio.charset.StandardCharsets;
@@ -16,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -51,6 +53,28 @@ public class NoteController {
                 "NOTE_DETAIL_OK",
                 "获取学习笔记详情成功",
                 noteService.getById(id)
+        );
+    }
+
+    @PutMapping("/{id}")
+    public ApiResponse<StudyNoteResponse> update(
+            @PathVariable Long id,
+            @RequestBody StudyNoteUpdateRequest request
+    ) {
+        return ApiResponse.success(
+                "NOTE_UPDATED",
+                "更新学习笔记成功",
+                noteService.update(id, request)
+        );
+    }
+
+    @DeleteMapping("/{id}")
+    public ApiResponse<Void> delete(@PathVariable Long id) {
+        noteService.delete(id);
+        return ApiResponse.success(
+                "NOTE_DELETED",
+                "删除学习笔记成功",
+                null
         );
     }
 
@@ -99,6 +123,19 @@ public class NoteController {
                 "NOTE_ANNOTATION_UPDATED",
                 "更新笔记批注成功",
                 noteAnnotationService.update(id, annotationId, request)
+        );
+    }
+
+    @DeleteMapping("/{id}/annotations/{annotationId}")
+    public ApiResponse<Void> deleteAnnotation(
+            @PathVariable Long id,
+            @PathVariable Long annotationId
+    ) {
+        noteAnnotationService.delete(id, annotationId);
+        return ApiResponse.success(
+                "NOTE_ANNOTATION_DELETED",
+                "删除笔记批注成功",
+                null
         );
     }
 
