@@ -1,0 +1,13 @@
+[Unit]
+Description=Website Backend Service
+After=network.target
+
+[Service]
+User=www-data
+WorkingDirectory=/var/www/my-site/backend
+ExecStart=/usr/bin/java -jar /var/www/my-site/backend/app.jar
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

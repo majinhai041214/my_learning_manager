@@ -1,0 +1,10 @@
+yourdomain.com, www.yourdomain.com {
+    encode gzip zstd
+
+    handle /api/* {
+        reverse_proxy 127.0.0.1:8080
+    }
+
+    root * /var/www/my-site/frontend
+    file_server
+}

@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: website-backend
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 25MB
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+website:
+  storage:
+    base-dir: uploads
+    notes-dir: notes
+    code-dir: code
+    images-dir: images
+    checkins-file: checkins/checkins.json
+    roadmap-file: roadmap/algorithm-roadmap.json
