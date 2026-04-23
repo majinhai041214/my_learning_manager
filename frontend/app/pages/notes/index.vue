@@ -120,7 +120,9 @@ async function loadNotes() {
   errorMessage.value = ''
 
   try {
-    const response = await $fetch<ApiResponse<StudyNote[]>>(`${apiBase}/api/notes`)
+    const response = await $fetch<ApiResponse<StudyNote[]>>('/notes', {
+      baseURL: apiBase
+    })
     notes.value = response.data
   } catch {
     errorMessage.value = '暂时无法读取学习笔记，请确认后端服务已经启动。'
@@ -167,7 +169,8 @@ async function uploadNote() {
       payload.append('tags', form.tags.trim())
     }
 
-    const response = await $fetch<ApiResponse<StudyNote>>(`${apiBase}/api/notes/upload`, {
+    const response = await $fetch<ApiResponse<StudyNote>>('/notes/upload', {
+      baseURL: apiBase,
       method: 'POST',
       body: payload
     })

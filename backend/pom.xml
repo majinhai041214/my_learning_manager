@@ -46,6 +46,9 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>com.majinhai.website.WebsiteBackendApplication</mainClass>
+                </configuration>
             </plugin>
         </plugins>
     </build>

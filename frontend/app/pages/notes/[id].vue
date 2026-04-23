@@ -46,7 +46,9 @@ const runtimeConfig = useRuntimeConfig()
 const apiBase = runtimeConfig.public.apiBase
 const noteId = route.params.id
 
-const { data: response, error } = await useFetch<ApiResponse<StudyNote>>(`${apiBase}/api/notes/${noteId}`)
+const { data: response, error } = await useFetch<ApiResponse<StudyNote>>(`/notes/${noteId}`, {
+  baseURL: apiBase
+})
 const note = computed(() => response.value?.data ?? null)
 
 const previewableTextExtensions = new Set([
@@ -223,7 +225,9 @@ async function loadAnnotations() {
   annotationError.value = ''
 
   try {
-    const annotationResponse = await $fetch<ApiResponse<NoteAnnotation[]>>(`${apiBase}/api/notes/${note.value.id}/annotations`)
+    const annotationResponse = await $fetch<ApiResponse<NoteAnnotation[]>>(`/notes/${note.value.id}/annotations`, {
+      baseURL: apiBase
+    })
     annotations.value = annotationResponse.data
   } catch {
     annotationError.value = '暂时无法读取批注列表。'
@@ -242,7 +246,8 @@ async function saveNoteMeta() {
   noteManagementSuccess.value = ''
 
   try {
-    const updated = await $fetch<ApiResponse<StudyNote>>(`${apiBase}/api/notes/${note.value.id}`, {
+    const updated = await $fetch<ApiResponse<StudyNote>>(`/notes/${note.value.id}`, {
+      baseURL: apiBase,
       method: 'PUT',
       body: {
         title: noteMetaForm.title,
@@ -279,7 +284,8 @@ async function saveMarkdownContent() {
   noteManagementSuccess.value = ''
 
   try {
-    const updated = await $fetch<ApiResponse<StudyNote>>(`${apiBase}/api/notes/${note.value.id}/content`, {
+    const updated = await $fetch<ApiResponse<StudyNote>>(`/notes/${note.value.id}/content`, {
+      baseURL: apiBase,
       method: 'PUT',
       body: {
         content: markdownContentForm.content
@@ -319,7 +325,8 @@ async function deleteNote() {
   noteManagementSuccess.value = ''
 
   try {
-    await $fetch<ApiResponse<null>>(`${apiBase}/api/notes/${note.value.id}`, {
+    await $fetch<ApiResponse<null>>(`/notes/${note.value.id}`, {
+      baseURL: apiBase,
       method: 'DELETE'
     })
     await router.push('/notes')
@@ -517,7 +524,8 @@ async function saveAnnotation() {
   annotationSuccess.value = ''
 
   try {
-    const annotationResponse = await $fetch<ApiResponse<NoteAnnotation>>(`${apiBase}/api/notes/${note.value.id}/annotations`, {
+    const annotationResponse = await $fetch<ApiResponse<NoteAnnotation>>(`/notes/${note.value.id}/annotations`, {
+      baseURL: apiBase,
       method: 'POST',
       body: {
         quotedText: selectedQuote.value,
@@ -560,7 +568,8 @@ async function deleteAnnotation(annotation: NoteAnnotation) {
   annotationSuccess.value = ''
 
   try {
-    await $fetch<ApiResponse<null>>(`${apiBase}/api/notes/${note.value.id}/annotations/${annotation.id}`, {
+    await $fetch<ApiResponse<null>>(`/notes/${note.value.id}/annotations/${annotation.id}`, {
+      baseURL: apiBase,
       method: 'DELETE'
     })
 
@@ -602,8 +611,9 @@ async function updateAnnotation(annotation: NoteAnnotation) {
 
   try {
     const annotationResponse = await $fetch<ApiResponse<NoteAnnotation>>(
-      `${apiBase}/api/notes/${note.value.id}/annotations/${annotation.id}`,
+      `/notes/${note.value.id}/annotations/${annotation.id}`,
       {
+        baseURL: apiBase,
         method: 'PUT',
         body: {
           quotedText: annotation.quotedText,
@@ -1103,7 +1113,8 @@ watch(selectedAnnotationId, async () => {
 
 if (note.value && isTextPreviewable.value) {
   try {
-    noteText.value = await $fetch<string>(`${apiBase}${note.value.viewUrl}`, {
+    noteText.value = await $fetch<string>(note.value.viewUrl, {
+      baseURL: apiBase,
       responseType: 'text'
     })
     markdownContentForm.content = noteText.value

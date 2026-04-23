@@ -343,7 +343,10 @@ function handleItemDrop(branchId: string, groupId: string, itemIndex: number) {
 }
 
 const { data: response, error, refresh } = await useFetch<ApiResponse<AlgorithmRoadmap>>(
-  `${apiBase}/api/algorithms/roadmap`
+  '/algorithms/roadmap',
+  {
+    baseURL: apiBase
+  }
 )
 
 const roadmap = reactive<AlgorithmRoadmap>(createRoadmapDraft())
@@ -583,7 +586,8 @@ async function saveRoadmap() {
   saveSuccess.value = ''
 
   try {
-    const saved = await $fetch<ApiResponse<AlgorithmRoadmap>>(`${apiBase}/api/algorithms/roadmap`, {
+    const saved = await $fetch<ApiResponse<AlgorithmRoadmap>>('/algorithms/roadmap', {
+      baseURL: apiBase,
       method: 'PUT',
       body: cloneRoadmap(roadmap)
     })

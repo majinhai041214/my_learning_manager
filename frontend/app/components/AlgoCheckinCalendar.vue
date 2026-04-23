@@ -271,7 +271,9 @@ async function loadCheckins() {
   errorMessage.value = ''
 
   try {
-    const response = await $fetch<ApiResponse<CheckInItem[]>>(`${apiBase}/api/checkins`)
+    const response = await $fetch<ApiResponse<CheckInItem[]>>('/checkins', {
+      baseURL: apiBase
+    })
     checkins.value = response.data.map(item => ({
       ...item,
       tags: Array.isArray(item.tags) ? item.tags : []

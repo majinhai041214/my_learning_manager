@@ -195,7 +195,8 @@ async function saveCheckin(item: CheckInItem) {
   successMessage.value = ''
 
   try {
-    const response = await $fetch<ApiResponse<CheckInItem>>(`${apiBase}/api/checkins/${item.id}`, {
+    const response = await $fetch<ApiResponse<CheckInItem>>(`/checkins/${item.id}`, {
+      baseURL: apiBase,
       method: 'PUT',
       body: {
         date: editForm.date,
@@ -237,7 +238,8 @@ async function deleteCheckin(item: CheckInItem) {
   successMessage.value = ''
 
   try {
-    await $fetch<ApiResponse<null>>(`${apiBase}/api/checkins/${item.id}`, {
+    await $fetch<ApiResponse<null>>(`/checkins/${item.id}`, {
+      baseURL: apiBase,
       method: 'DELETE'
     })
 
@@ -303,7 +305,9 @@ async function loadCheckins() {
   errorMessage.value = ''
 
   try {
-    const response = await $fetch<ApiResponse<CheckInItem[]>>(`${apiBase}/api/checkins`)
+    const response = await $fetch<ApiResponse<CheckInItem[]>>('/checkins', {
+      baseURL: apiBase
+    })
     checkins.value = response.data
       .map(normalizeCheckin)
       .sort(compareCheckinsByRecency)
@@ -321,7 +325,8 @@ async function submitCheckin() {
   successMessage.value = ''
 
   try {
-    const response = await $fetch<ApiResponse<CheckInItem>>(`${apiBase}/api/checkins`, {
+    const response = await $fetch<ApiResponse<CheckInItem>>('/checkins', {
+      baseURL: apiBase,
       method: 'POST',
       body: {
         date: form.date,
