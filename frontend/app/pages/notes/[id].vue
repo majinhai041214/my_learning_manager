@@ -174,6 +174,22 @@ function renderPlainTextBlock(value: string | null, fallback: string) {
   return renderInputTextToHtml(value?.trim() || fallback)
 }
 
+function resolveApiResourceUrl(path: string) {
+  if (!path) {
+    return path
+  }
+
+  if (/^https?:\/\//.test(path)) {
+    return path
+  }
+
+  if (/^https?:\/\//.test(apiBase)) {
+    return `${apiBase}${path}`
+  }
+
+  return path
+}
+
 function syncNoteMetaForm() {
   noteMetaForm.title = note.value?.title ?? ''
   noteMetaForm.description = note.value?.description ?? ''
@@ -1011,7 +1027,7 @@ async function setupPdfViewer() {
 
     pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.default
 
-    const pdfResponse = await fetch(`${apiBase}${note.value.viewUrl}`)
+    const pdfResponse = await fetch(resolveApiResourceUrl(note.value.viewUrl))
     if (!pdfResponse.ok) {
       throw new Error('PDF_FETCH_FAILED')
     }
@@ -1113,8 +1129,7 @@ watch(selectedAnnotationId, async () => {
 
 if (note.value && isTextPreviewable.value) {
   try {
-    noteText.value = await $fetch<string>(note.value.viewUrl, {
-      baseURL: apiBase,
+    noteText.value = await $fetch<string>(resolveApiResourceUrl(note.value.viewUrl), {
       responseType: 'text'
     })
     markdownContentForm.content = noteText.value
@@ -1272,10 +1287,10 @@ onBeforeUnmount(async () => {
       </div>
 
       <div class="hero-actions">
-        <a class="button primary" :href="`${apiBase}${note.viewUrl}`" target="_blank" rel="noreferrer">
+        <a class="button primary" :href="resolveApiResourceUrl(note.viewUrl)" target="_blank" rel="noreferrer">
           打开原文件
         </a>
-        <a class="button secondary" :href="`${apiBase}${note.downloadUrl}`" target="_blank" rel="noreferrer">
+        <a class="button secondary" :href="resolveApiResourceUrl(note.downloadUrl)" target="_blank" rel="noreferrer">
           下载文件
         </a>
         <NuxtLink class="button secondary" to="/notes">返回学习笔记页</NuxtLink>
@@ -1306,13 +1321,13 @@ onBeforeUnmount(async () => {
           v-else-if="isPdf"
           class="pdf-preview-stack"
         >
-          <iframe class="note-pdf-frame" :src="`${apiBase}${note.viewUrl}`" :title="note.title" />
+          <iframe class="note-pdf-frame" :src="resolveApiResourceUrl(note.viewUrl)" :title="note.title" />
           <div class="pdf-preview-toolbar">
             <div>
               <strong>PDF 锚点模式</strong>
               <span>上方是稳定的原始预览，下方支持划选文本高亮，也支持点击空白处添加锚点说明</span>
             </div>
-            <a class="button secondary" :href="`${apiBase}${note.viewUrl}`" target="_blank" rel="noreferrer">
+            <a class="button secondary" :href="resolveApiResourceUrl(note.viewUrl)" target="_blank" rel="noreferrer">
               打开原 PDF
             </a>
           </div>
