@@ -11,6 +11,7 @@ function escapeHtml(value: string) {
 
 function renderPlainInline(value: string) {
   return escapeHtml(value)
+    .replace(/==([^=]+)==/g, '<mark>$1</mark>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
 }
@@ -47,7 +48,7 @@ function renderInlineMarkdown(value: string) {
     if (token.startsWith('`')) {
       result += `<code>${escapeHtml(token.slice(1, -1))}</code>`
     } else if (token.startsWith('$$')) {
-      result += `<span class="math-inline">${renderMathExpression(token.slice(2, -2), false)}</span>`
+      result += `<span class="math-inline">${renderMathExpression(token.slice(2, -2), true)}</span>`
     } else if (token.startsWith('$')) {
       result += `<span class="math-inline">${renderMathExpression(token.slice(1, -1), false)}</span>`
     } else if (token.startsWith('[')) {
@@ -64,6 +65,29 @@ function renderInlineMarkdown(value: string) {
 
   result += renderPlainInline(value.slice(cursor))
   return result
+}
+
+function parseTableRow(line: string) {
+  let normalized = line.trim()
+  if (normalized.startsWith('|')) {
+    normalized = normalized.slice(1)
+  }
+  if (normalized.endsWith('|')) {
+    normalized = normalized.slice(0, -1)
+  }
+
+  return normalized
+    .split(/(?<!\\)\|/)
+    .map(cell => cell.replace(/\\\|/g, '|').trim())
+}
+
+function isMarkdownTableSeparator(line: string) {
+  const cells = parseTableRow(line)
+  if (!cells.length) {
+    return false
+  }
+
+  return cells.every(cell => /^:?-{3,}:?$/.test(cell))
 }
 
 function wrapToken(content: string, className: string) {
@@ -282,6 +306,52 @@ export function renderMarkdownToHtml(markdown: string) {
       continue
     }
 
+    const nextLine = lines[index + 1] ?? ''
+    if (line.includes('|') && nextLine.includes('|') && isMarkdownTableSeparator(nextLine)) {
+      const headers = parseTableRow(line)
+      const alignments = parseTableRow(nextLine).map((cell) => {
+        const trimmed = cell.trim()
+        if (trimmed.startsWith(':') && trimmed.endsWith(':')) {
+          return 'center'
+        }
+        if (trimmed.endsWith(':')) {
+          return 'right'
+        }
+        if (trimmed.startsWith(':')) {
+          return 'left'
+        }
+        return ''
+      })
+
+      const rows: string[] = []
+      index += 2
+
+      while (index < lines.length) {
+        const rowLine = lines[index]
+        if (!rowLine.trim() || !rowLine.includes('|')) {
+          break
+        }
+
+        const cells = parseTableRow(rowLine)
+        rows.push(
+          `<tr>${headers.map((_, cellIndex) => {
+            const alignment = alignments[cellIndex] ? ` style="text-align:${alignments[cellIndex]}"` : ''
+            const content = renderInlineMarkdown(cells[cellIndex] ?? '')
+            return `<td${alignment}>${content}</td>`
+          }).join('')}</tr>`
+        )
+        index += 1
+      }
+
+      blocks.push(
+        `<div class="markdown-table-wrap"><table class="markdown-table"><thead><tr>${headers.map((header, cellIndex) => {
+          const alignment = alignments[cellIndex] ? ` style="text-align:${alignments[cellIndex]}"` : ''
+          return `<th${alignment}>${renderInlineMarkdown(header)}</th>`
+        }).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`
+      )
+      continue
+    }
+
     if (line.startsWith('> ')) {
       blocks.push(`<blockquote>${renderInlineMarkdown(line.slice(2))}</blockquote>`)
       index += 1
@@ -305,6 +375,67 @@ export function renderMarkdownToHtml(markdown: string) {
 
 export function renderCodeToHtml(code: string, extension: string) {
   return `<pre class="markdown-code-block"><code class="language-${extension.toLowerCase()}">${highlightCode(code, extension)}</code></pre>`
+}
+
+export function renderInputTextToHtml(text: string) {
+  const source = text.replaceAll('\r\n', '\n').trim()
+  if (!source) {
+    return ''
+  }
+
+  const lines = source.split('\n')
+  const blocks: string[] = []
+  let paragraphBuffer: string[] = []
+  let mathBuffer: string[] = []
+  let inMathBlock = false
+
+  function flushParagraph() {
+    if (!paragraphBuffer.length) {
+      return
+    }
+    blocks.push(`<p>${paragraphBuffer.map(line => renderInlineMarkdown(line)).join('<br />')}</p>`)
+    paragraphBuffer = []
+  }
+
+  function flushMathBlock() {
+    if (!mathBuffer.length) {
+      return
+    }
+    blocks.push(`<div class="markdown-math-block">${renderMathExpression(mathBuffer.join('\n'), true)}</div>`)
+    mathBuffer = []
+  }
+
+  for (const line of lines) {
+    if (line.trim() === '$$') {
+      if (inMathBlock) {
+        flushMathBlock()
+        inMathBlock = false
+      } else {
+        flushParagraph()
+        inMathBlock = true
+      }
+      continue
+    }
+
+    if (inMathBlock) {
+      mathBuffer.push(line)
+      continue
+    }
+
+    if (!line.trim()) {
+      flushParagraph()
+      continue
+    }
+
+    paragraphBuffer.push(line)
+  }
+
+  flushParagraph()
+  if (inMathBlock) {
+    flushMathBlock()
+  }
+
+  return blocks.join('')
 }
 
 export function escapePlainText(text: string) {

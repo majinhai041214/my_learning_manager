@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { renderCodeToHtml, renderMarkdownToHtml } from '~/utils/notePreview'
+import { renderCodeToHtml, renderInputTextToHtml, renderMarkdownToHtml } from '~/utils/notePreview'
 
 interface StudyNote {
   id: number
@@ -100,6 +100,7 @@ const savingAnnotation = ref(false)
 const deletingAnnotationId = ref<number | null>(null)
 const noteEditMode = ref(false)
 const savingNoteMeta = ref(false)
+const savingNoteContent = ref(false)
 const deletingNote = ref(false)
 const noteManagementError = ref('')
 const noteManagementSuccess = ref('')
@@ -113,6 +114,9 @@ const noteMetaForm = reactive({
   title: '',
   description: '',
   tags: ''
+})
+const markdownContentForm = reactive({
+  content: ''
 })
 
 const renderedPreview = computed(() => {
@@ -162,6 +166,10 @@ function formatAnnotationDate(value: string) {
 
 function renderAnnotationComment(comment: string) {
   return renderMarkdownToHtml(comment)
+}
+
+function renderPlainTextBlock(value: string | null, fallback: string) {
+  return renderInputTextToHtml(value?.trim() || fallback)
 }
 
 function syncNoteMetaForm() {
@@ -258,6 +266,42 @@ async function saveNoteMeta() {
     noteManagementError.value = saveFailure?.data?.message ?? '更新笔记信息失败，请稍后重试。'
   } finally {
     savingNoteMeta.value = false
+  }
+}
+
+async function saveMarkdownContent() {
+  if (!note.value || !isMarkdown.value) {
+    return
+  }
+
+  savingNoteContent.value = true
+  noteManagementError.value = ''
+  noteManagementSuccess.value = ''
+
+  try {
+    const updated = await $fetch<ApiResponse<StudyNote>>(`${apiBase}/api/notes/${note.value.id}/content`, {
+      method: 'PUT',
+      body: {
+        content: markdownContentForm.content
+      }
+    })
+
+    const normalizedContent = markdownContentForm.content.replace(/\r\n/g, '\n')
+    markdownContentForm.content = normalizedContent
+    noteText.value = normalizedContent
+    if (response.value) {
+      response.value = {
+        ...response.value,
+        data: updated.data
+      }
+    }
+    await nextTick()
+    syncMarkdownPreviewHtml()
+    noteManagementSuccess.value = 'Markdown 正文已更新。'
+  } catch (saveFailure: any) {
+    noteManagementError.value = saveFailure?.data?.message ?? '更新 Markdown 正文失败，请稍后重试。'
+  } finally {
+    savingNoteContent.value = false
   }
 }
 
@@ -1062,6 +1106,7 @@ if (note.value && isTextPreviewable.value) {
     noteText.value = await $fetch<string>(`${apiBase}${note.value.viewUrl}`, {
       responseType: 'text'
     })
+    markdownContentForm.content = noteText.value
   } catch {
     previewError.value = '当前无法读取文本预览，你仍然可以直接打开或下载原文件。'
   }
@@ -1128,9 +1173,10 @@ onBeforeUnmount(async () => {
     <section v-if="note" class="page-hero">
       <p class="eyebrow">Study Note Detail</p>
       <h1>{{ note.title }}</h1>
-      <p>
-        {{ note.description || '这份学习笔记当前还没有补充说明，你可以先直接查看原文件内容。' }}
-      </p>
+      <div
+        class="note-description rich-text-rendered"
+        v-html="renderPlainTextBlock(note.description, '这份学习笔记当前还没有补充说明，你可以先直接查看原文件内容。')"
+      ></div>
 
       <div class="note-detail-meta">
         <span>{{ note.originalFilename }}</span>
@@ -1203,7 +1249,10 @@ onBeforeUnmount(async () => {
 
         <div v-else class="note-management-summary">
           <p><strong>当前标题：</strong>{{ note.title }}</p>
-          <p><strong>当前描述：</strong>{{ note.description || '暂无描述' }}</p>
+          <div class="note-management-description rich-text-rendered">
+            <strong>当前描述：</strong>
+            <div v-html="renderPlainTextBlock(note.description, '暂无描述')"></div>
+          </div>
           <p><strong>当前标签：</strong>{{ note.tags.length ? note.tags.join(' / ') : '暂无标签' }}</p>
         </div>
 
@@ -1240,7 +1289,7 @@ onBeforeUnmount(async () => {
           ref="previewContainer"
           class="note-rendered-preview selectable-preview"
           @mouseup="handlePreviewSelection"
-        />
+        ></div>
 
         <div
           v-else-if="isPdf"
@@ -1275,7 +1324,7 @@ onBeforeUnmount(async () => {
               "
             >
               <div v-if="pdfRenderLoading" class="pdfjs-loading-copy">正在加载 PDF 页面预览...</div>
-              <div ref="pdfViewerPages" class="pdfViewer" />
+              <div ref="pdfViewerPages" class="pdfViewer"></div>
             </div>
           </div>
         </div>
@@ -1368,7 +1417,7 @@ onBeforeUnmount(async () => {
                 </button>
               </div>
             </div>
-            <div v-else class="annotation-comment markdown-comment" v-html="renderAnnotationComment(annotation.comment)" />
+            <div v-else class="annotation-comment markdown-comment" v-html="renderAnnotationComment(annotation.comment)"></div>
             <div class="annotation-card-actions">
               <button
                 v-if="editingAnnotationId !== annotation.id"
@@ -1402,7 +1451,7 @@ onBeforeUnmount(async () => {
         v-else
         ref="previewContainer"
         class="note-rendered-preview"
-      />
+      ></div>
     </section>
 
     <section v-else-if="note" class="content-card note-preview-card">
@@ -1418,6 +1467,25 @@ onBeforeUnmount(async () => {
         {{ error?.data?.message || '可能是后端服务未启动，或当前笔记不存在。' }}
       </p>
       <NuxtLink class="button secondary" to="/notes">返回学习笔记页</NuxtLink>
+    </section>
+
+    <section v-if="note && isMarkdown" class="content-card markdown-editor-section">
+      <p class="eyebrow">Markdown Source</p>
+      <h2>Markdown 正文编辑</h2>
+      <p class="preview-copy">这里直接编辑源码。保存后才会更新上方渲染结果，不做实时预览。</p>
+
+      <textarea
+        v-model="markdownContentForm.content"
+        class="markdown-editor-textarea"
+        rows="18"
+        placeholder="在这里编辑 Markdown 正文。"
+      />
+
+      <div class="markdown-editor-actions">
+        <button class="button primary" type="button" :disabled="savingNoteContent" @click="saveMarkdownContent">
+          {{ savingNoteContent ? '保存中...' : '保存正文' }}
+        </button>
+      </div>
     </section>
   </div>
 </template>
@@ -1456,6 +1524,11 @@ onBeforeUnmount(async () => {
   gap: 18px;
   min-width: 0;
   overflow: hidden;
+}
+
+.markdown-editor-section {
+  display: grid;
+  gap: 18px;
 }
 
 .note-management-card,
@@ -1500,6 +1573,22 @@ onBeforeUnmount(async () => {
   line-height: 1.7;
 }
 
+.note-description,
+.note-management-description {
+  color: var(--muted);
+  line-height: 1.8;
+}
+
+.note-description {
+  max-width: 720px;
+  font-size: 18px;
+}
+
+.note-management-description {
+  display: grid;
+  gap: 6px;
+}
+
 .danger-button {
   border-color: rgba(255, 107, 107, 0.28);
   color: #ffd0d0;
@@ -1508,6 +1597,25 @@ onBeforeUnmount(async () => {
 .danger-button:hover:not(:disabled) {
   border-color: rgba(255, 107, 107, 0.46);
   background: rgba(255, 107, 107, 0.08);
+}
+
+.markdown-editor-textarea {
+  width: 100%;
+  min-height: 460px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.8;
+  resize: vertical;
+}
+
+.markdown-editor-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .note-annotation-layout {
@@ -1984,6 +2092,53 @@ onBeforeUnmount(async () => {
   line-height: 1.7;
 }
 
+.note-rendered-preview :deep(.markdown-table-wrap),
+.markdown-comment :deep(.markdown-table-wrap) {
+  max-width: 100%;
+  margin: 0 0 16px;
+  overflow-x: auto;
+}
+
+.note-rendered-preview :deep(.markdown-table),
+.markdown-comment :deep(.markdown-table) {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+  border-spacing: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.note-rendered-preview :deep(.markdown-table th),
+.note-rendered-preview :deep(.markdown-table td),
+.markdown-comment :deep(.markdown-table th),
+.markdown-comment :deep(.markdown-table td) {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: left;
+  line-height: 1.75;
+  vertical-align: top;
+}
+
+.note-rendered-preview :deep(.markdown-table th),
+.markdown-comment :deep(.markdown-table th) {
+  color: var(--text);
+  font-weight: 700;
+  background: rgba(107, 211, 255, 0.08);
+}
+
+.note-rendered-preview :deep(.markdown-table td),
+.markdown-comment :deep(.markdown-table td) {
+  color: var(--muted);
+}
+
+.note-rendered-preview :deep(.markdown-table tr:last-child td),
+.markdown-comment :deep(.markdown-table tr:last-child td) {
+  border-bottom: 0;
+}
+
 .note-rendered-preview :deep(.token-comment) {
   color: #7f93ad;
 }
@@ -2001,15 +2156,31 @@ onBeforeUnmount(async () => {
 }
 
 .note-rendered-preview :deep(.note-annotation-highlight) {
-  padding: 0 2px;
-  border-radius: 4px;
-  background: rgba(255, 211, 107, 0.32);
-  color: inherit;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(255, 236, 130, 0.78), rgba(255, 198, 64, 0.62));
+  box-shadow:
+    0 0 0 1px rgba(255, 214, 102, 0.34),
+    inset 0 -1px 0 rgba(255, 248, 214, 0.34);
+  color: #fff7d1;
   cursor: pointer;
+  transition: background 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.note-rendered-preview :deep(.note-annotation-highlight:hover),
+.note-rendered-preview :deep(.note-annotation-highlight:focus-visible) {
+  background: linear-gradient(180deg, rgba(255, 244, 156, 0.92), rgba(255, 205, 74, 0.74));
+  box-shadow:
+    0 0 0 1px rgba(255, 232, 122, 0.48),
+    0 6px 18px rgba(255, 196, 72, 0.2);
 }
 
 .note-rendered-preview :deep(.note-annotation-highlight.is-active) {
-  background: rgba(107, 211, 255, 0.32);
+  background: linear-gradient(180deg, rgba(255, 138, 101, 0.92), rgba(255, 87, 87, 0.72));
+  box-shadow:
+    0 0 0 1px rgba(255, 138, 101, 0.52),
+    0 0 0 4px rgba(255, 99, 99, 0.16),
+    0 10px 24px rgba(255, 87, 87, 0.22);
 }
 
 .markdown-comment :deep(p),
@@ -2037,6 +2208,13 @@ onBeforeUnmount(async () => {
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.06);
   font-family: Consolas, "Courier New", monospace;
+}
+
+.markdown-comment :deep(mark) {
+  padding: 0 6px;
+  border-radius: 8px;
+  background: rgba(255, 214, 102, 0.3);
+  color: #fff1c2;
 }
 
 .note-rendered-preview :deep(.math-inline),

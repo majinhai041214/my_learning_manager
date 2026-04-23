@@ -3,6 +3,7 @@ package com.majinhai.website.controller;
 import com.majinhai.website.model.dto.ApiResponse;
 import com.majinhai.website.model.dto.NoteAnnotationRequest;
 import com.majinhai.website.model.dto.NoteAnnotationResponse;
+import com.majinhai.website.model.dto.StudyNoteContentUpdateRequest;
 import com.majinhai.website.model.dto.StudyNoteResponse;
 import com.majinhai.website.model.dto.StudyNoteUpdateRequest;
 import com.majinhai.website.service.NoteAnnotationService;
@@ -65,6 +66,18 @@ public class NoteController {
                 "NOTE_UPDATED",
                 "更新学习笔记成功",
                 noteService.update(id, request)
+        );
+    }
+
+    @PutMapping("/{id}/content")
+    public ApiResponse<StudyNoteResponse> updateContent(
+            @PathVariable Long id,
+            @RequestBody StudyNoteContentUpdateRequest request
+    ) {
+        return ApiResponse.success(
+                "NOTE_CONTENT_UPDATED",
+                "更新学习笔记正文成功",
+                noteService.updateContent(id, request)
         );
     }
 

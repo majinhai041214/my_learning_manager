@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 import org.springframework.stereotype.Repository;
 
@@ -39,11 +40,41 @@ public class FileCheckInRepository implements CheckInRepository {
     }
 
     @Override
+    public synchronized Optional<CheckIn> findById(Long id) {
+        return storage.stream()
+                .filter(checkIn -> checkIn.getId() != null && checkIn.getId().equals(id))
+                .findFirst();
+    }
+
+    @Override
     public synchronized CheckIn save(CheckIn checkIn) {
         checkIn.setId(idGenerator.getAndIncrement());
         storage.add(checkIn);
         persist();
         return checkIn;
+    }
+
+    @Override
+    public synchronized CheckIn update(CheckIn checkIn) {
+        for (int index = 0; index < storage.size(); index += 1) {
+            CheckIn current = storage.get(index);
+            if (current.getId() != null && current.getId().equals(checkIn.getId())) {
+                storage.set(index, checkIn);
+                persist();
+                return checkIn;
+            }
+        }
+
+        throw new BusinessException("CHECKIN_NOT_FOUND", "未找到对应的打卡记录");
+    }
+
+    @Override
+    public synchronized void deleteById(Long id) {
+        boolean removed = storage.removeIf(checkIn -> checkIn.getId() != null && checkIn.getId().equals(id));
+        if (!removed) {
+            throw new BusinessException("CHECKIN_NOT_FOUND", "未找到对应的打卡记录");
+        }
+        persist();
     }
 
     private void loadExistingData() {

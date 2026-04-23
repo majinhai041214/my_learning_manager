@@ -1,6 +1,7 @@
 package com.majinhai.website.service;
 
 import com.majinhai.website.model.dto.StudyNoteUpdateRequest;
+import com.majinhai.website.model.dto.StudyNoteContentUpdateRequest;
 import com.majinhai.website.model.dto.StudyNoteResponse;
 import java.util.List;
 import org.springframework.core.io.Resource;
@@ -15,6 +16,8 @@ public interface NoteService {
     StudyNoteResponse upload(MultipartFile file, String title, String description, String tags);
 
     StudyNoteResponse update(Long id, StudyNoteUpdateRequest request);
+
+    StudyNoteResponse updateContent(Long id, StudyNoteContentUpdateRequest request);
 
     void delete(Long id);
 

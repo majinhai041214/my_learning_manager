@@ -3,6 +3,8 @@ package com.majinhai.website.model.entity;
 import com.majinhai.website.model.enums.StudyCategory;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 public class CheckIn {
 
@@ -12,6 +14,7 @@ public class CheckIn {
     private String summary;
     private StudyCategory category;
     private Integer durationMinutes;
+    private List<String> tags = new ArrayList<>();
     private OffsetDateTime createdAt;
 
     public Long getId() {
@@ -60,6 +63,14 @@ public class CheckIn {
 
     public void setDurationMinutes(Integer durationMinutes) {
         this.durationMinutes = durationMinutes;
+    }
+
+    public List<String> getTags() {
+        return tags == null ? new ArrayList<>() : tags;
+    }
+
+    public void setTags(List<String> tags) {
+        this.tags = tags == null ? new ArrayList<>() : tags;
     }
 
     public OffsetDateTime getCreatedAt() {

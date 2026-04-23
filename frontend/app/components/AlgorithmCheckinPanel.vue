@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { renderInputTextToHtml } from '~/utils/notePreview'
+
 type StudyCategory =
   | 'DATA_STRUCTURE'
   | 'SEARCH'
@@ -16,6 +18,7 @@ interface CheckInItem {
   summary: string | null
   category: StudyCategory
   durationMinutes: number
+  tags: string[]
   createdAt: string
 }
 
@@ -46,14 +49,33 @@ const loading = ref(true)
 const submitting = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
+const isTimerRunning = ref(false)
+const elapsedSeconds = ref(0)
+const currentPage = ref(1)
+const editingCheckinId = ref<number | null>(null)
+const savingCheckinId = ref<number | null>(null)
+const deletingCheckinId = ref<number | null>(null)
+let timerId: ReturnType<typeof setInterval> | null = null
 
 const form = reactive({
   date: new Date().toISOString().slice(0, 10),
   title: '',
   summary: '',
   category: 'REVIEW' as StudyCategory,
-  durationMinutes: 60
+  durationMinutes: 60,
+  tags: ''
 })
+
+const editForm = reactive({
+  date: '',
+  title: '',
+  summary: '',
+  category: 'REVIEW' as StudyCategory,
+  durationMinutes: 60,
+  tags: ''
+})
+
+const incompleteMasteryTag = '尚未完全掌握'
 
 const totalMinutes = computed(() =>
   checkins.value.reduce((sum, item) => sum + item.durationMinutes, 0)
@@ -61,7 +83,43 @@ const totalMinutes = computed(() =>
 
 const totalDays = computed(() => checkins.value.length)
 
-const recentTitles = computed(() => checkins.value.slice(0, 3))
+function compareCheckinsByRecency(left: CheckInItem, right: CheckInItem) {
+  return right.date.localeCompare(left.date) || right.createdAt.localeCompare(left.createdAt)
+}
+
+const prioritizedCheckins = computed(() =>
+  [...checkins.value].sort((left, right) => {
+    const leftPriority = Number(hasIncompleteMasteryTag(left))
+    const rightPriority = Number(hasIncompleteMasteryTag(right))
+    if (leftPriority !== rightPriority) {
+      return rightPriority - leftPriority
+    }
+
+    return compareCheckinsByRecency(left, right)
+  })
+)
+
+const recentTitles = computed(() => prioritizedCheckins.value.slice(0, 3))
+const pageSize = 3
+
+const totalPages = computed(() => Math.max(1, Math.ceil(checkins.value.length / pageSize)))
+
+const paginatedCheckins = computed(() => {
+  const start = (currentPage.value - 1) * pageSize
+  return prioritizedCheckins.value.slice(start, start + pageSize)
+})
+
+const timerMinutes = computed(() => Math.max(1, Math.ceil(elapsedSeconds.value / 60)))
+
+const formattedElapsedTime = computed(() => {
+  const hours = Math.floor(elapsedSeconds.value / 3600)
+  const minutes = Math.floor((elapsedSeconds.value % 3600) / 60)
+  const seconds = elapsedSeconds.value % 60
+
+  return [hours, minutes, seconds]
+    .map(value => String(value).padStart(2, '0'))
+    .join(':')
+})
 
 function formatCategory(category: StudyCategory) {
   return categoryOptions.find((item) => item.value === category)?.label ?? category
@@ -74,6 +132,172 @@ function formatDate(value: string) {
   }).format(new Date(value))
 }
 
+function renderSummaryText(value: string | null) {
+  return renderInputTextToHtml(value?.trim() || '这条记录还没有补充摘要。')
+}
+
+function normalizeTag(tag: string) {
+  const normalized = tag.trim()
+  if (normalized === '未完全掌握' || normalized === '尚未掌握' || normalized.toLowerCase() === 'not-mastered') {
+    return incompleteMasteryTag
+  }
+  return normalized
+}
+
+function parseTags(rawTags: string) {
+  return rawTags
+    .split(/[,\n，]/)
+    .map(tag => normalizeTag(tag))
+    .filter(Boolean)
+    .filter((tag, index, items) => items.indexOf(tag) === index)
+}
+
+function hasIncompleteMasteryTag(item: CheckInItem) {
+  return item.tags.includes(incompleteMasteryTag)
+}
+
+function normalizeCheckin(item: CheckInItem) {
+  return {
+    ...item,
+    tags: Array.isArray(item.tags) ? item.tags.map(tag => normalizeTag(tag)).filter(Boolean) : []
+  }
+}
+
+function formatTagsInput(tags: string[]) {
+  return tags.join(', ')
+}
+
+function startEditingCheckin(item: CheckInItem) {
+  editingCheckinId.value = item.id
+  editForm.date = item.date
+  editForm.title = item.title
+  editForm.summary = item.summary ?? ''
+  editForm.category = item.category
+  editForm.durationMinutes = item.durationMinutes
+  editForm.tags = formatTagsInput(item.tags)
+  errorMessage.value = ''
+  successMessage.value = ''
+}
+
+function cancelEditingCheckin() {
+  editingCheckinId.value = null
+  editForm.date = ''
+  editForm.title = ''
+  editForm.summary = ''
+  editForm.category = 'REVIEW'
+  editForm.durationMinutes = 60
+  editForm.tags = ''
+}
+
+async function saveCheckin(item: CheckInItem) {
+  savingCheckinId.value = item.id
+  errorMessage.value = ''
+  successMessage.value = ''
+
+  try {
+    const response = await $fetch<ApiResponse<CheckInItem>>(`${apiBase}/api/checkins/${item.id}`, {
+      method: 'PUT',
+      body: {
+        date: editForm.date,
+        title: editForm.title,
+        summary: editForm.summary.trim() || null,
+        category: editForm.category,
+        durationMinutes: Number(editForm.durationMinutes),
+        tags: parseTags(editForm.tags)
+      }
+    })
+
+    const updated = normalizeCheckin(response.data)
+    checkins.value = checkins.value.map(current => current.id === updated.id ? updated : current)
+      .sort(compareCheckinsByRecency)
+    successMessage.value = '这条学习记录已更新。'
+    cancelEditingCheckin()
+  } catch {
+    errorMessage.value = '更新学习记录失败，请稍后再试。'
+  } finally {
+    savingCheckinId.value = null
+  }
+}
+
+function markAsIncompleteMastery(item: CheckInItem) {
+  const nextTags = item.tags.includes(incompleteMasteryTag)
+    ? item.tags
+    : [incompleteMasteryTag, ...item.tags]
+  startEditingCheckin(item)
+  editForm.tags = formatTagsInput(nextTags)
+}
+
+async function deleteCheckin(item: CheckInItem) {
+  if (!window.confirm(`确认删除“${item.title}”这条学习记录吗？`)) {
+    return
+  }
+
+  deletingCheckinId.value = item.id
+  errorMessage.value = ''
+  successMessage.value = ''
+
+  try {
+    await $fetch<ApiResponse<null>>(`${apiBase}/api/checkins/${item.id}`, {
+      method: 'DELETE'
+    })
+
+    checkins.value = checkins.value.filter(current => current.id !== item.id)
+    if (editingCheckinId.value === item.id) {
+      cancelEditingCheckin()
+    }
+    currentPage.value = Math.min(currentPage.value, Math.max(1, Math.ceil(checkins.value.length / pageSize)))
+    successMessage.value = '这条学习记录已删除。'
+  } catch {
+    errorMessage.value = '删除学习记录失败，请稍后再试。'
+  } finally {
+    deletingCheckinId.value = null
+  }
+}
+
+function stopTimerInterval() {
+  if (timerId) {
+    clearInterval(timerId)
+    timerId = null
+  }
+}
+
+function startTimer() {
+  if (isTimerRunning.value) {
+    return
+  }
+
+  successMessage.value = ''
+  errorMessage.value = ''
+  isTimerRunning.value = true
+  timerId = setInterval(() => {
+    elapsedSeconds.value += 1
+  }, 1000)
+}
+
+function stopTimer() {
+  if (!isTimerRunning.value) {
+    return
+  }
+
+  stopTimerInterval()
+  isTimerRunning.value = false
+  form.durationMinutes = timerMinutes.value
+  successMessage.value = `本次计时已停止，学习时长已同步为 ${timerMinutes.value} 分钟。`
+}
+
+function resetTimer(options?: { silent?: boolean }) {
+  stopTimerInterval()
+  isTimerRunning.value = false
+  elapsedSeconds.value = 0
+  if (!options?.silent) {
+    successMessage.value = '计时器已重置，你可以重新开始记录。'
+  }
+}
+
+function goToPage(page: number) {
+  currentPage.value = Math.min(Math.max(page, 1), totalPages.value)
+}
+
 async function loadCheckins() {
   loading.value = true
   errorMessage.value = ''
@@ -81,6 +305,9 @@ async function loadCheckins() {
   try {
     const response = await $fetch<ApiResponse<CheckInItem[]>>(`${apiBase}/api/checkins`)
     checkins.value = response.data
+      .map(normalizeCheckin)
+      .sort(compareCheckinsByRecency)
+    currentPage.value = 1
   } catch {
     errorMessage.value = '暂时无法读取打卡记录，请确认后端服务已经启动。'
   } finally {
@@ -101,16 +328,20 @@ async function submitCheckin() {
         title: form.title,
         summary: form.summary.trim() || null,
         category: form.category,
-        durationMinutes: Number(form.durationMinutes)
+        durationMinutes: Number(form.durationMinutes),
+        tags: parseTags(form.tags)
       }
     })
 
-    checkins.value = [response.data, ...checkins.value]
-      .sort((left, right) => right.date.localeCompare(left.date))
+    checkins.value = [normalizeCheckin(response.data), ...checkins.value]
+      .sort(compareCheckinsByRecency)
+    currentPage.value = 1
     successMessage.value = '打卡已保存，算法页现在展示的是你的真实记录。'
     form.title = ''
     form.summary = ''
     form.durationMinutes = 60
+    form.tags = ''
+    resetTimer({ silent: true })
   } catch {
     errorMessage.value = '提交失败，请检查表单内容或确认后端接口是否可用。'
   } finally {
@@ -119,6 +350,15 @@ async function submitCheckin() {
 }
 
 onMounted(loadCheckins)
+watch(totalPages, (value) => {
+  if (currentPage.value > value) {
+    currentPage.value = value
+  }
+})
+
+onBeforeUnmount(() => {
+  stopTimerInterval()
+})
 </script>
 
 <template>
@@ -137,6 +377,41 @@ onMounted(loadCheckins)
         <h3>新增一条今日学习记录</h3>
 
         <form class="checkin-form" @submit.prevent="submitCheckin">
+          <div class="timer-panel">
+            <div class="timer-display-block">
+              <span>专注计时器</span>
+              <strong>{{ formattedElapsedTime }}</strong>
+              <small>点击停止后，会自动同步到下方“学习时长”输入框。</small>
+            </div>
+
+            <div class="timer-actions">
+              <button
+                v-if="!isTimerRunning"
+                class="button secondary"
+                type="button"
+                @click="startTimer"
+              >
+                开始计时
+              </button>
+              <button
+                v-else
+                class="button primary"
+                type="button"
+                @click="stopTimer"
+              >
+                停止并同步
+              </button>
+              <button
+                class="button secondary"
+                type="button"
+                :disabled="isTimerRunning || elapsedSeconds === 0"
+                @click="resetTimer"
+              >
+                重置
+              </button>
+            </div>
+          </div>
+
           <label>
             <span>日期</span>
             <input v-model="form.date" type="date" required />
@@ -169,6 +444,15 @@ onMounted(loadCheckins)
           <label>
             <span>学习时长（分钟）</span>
             <input v-model="form.durationMinutes" type="number" min="1" max="1440" required />
+          </label>
+
+          <label>
+            <span>标签（可选）</span>
+            <input
+              v-model="form.tags"
+              type="text"
+              placeholder="例如：尚未完全掌握, 二分, 复盘"
+            />
           </label>
 
           <label>
@@ -210,7 +494,15 @@ onMounted(loadCheckins)
 
           <ul class="recent-list" v-if="recentTitles.length">
             <li v-for="item in recentTitles" :key="item.id">
-              <strong>{{ item.title }}</strong>
+              <div class="recent-list-title">
+                <strong>{{ item.title }}</strong>
+                <span
+                  v-if="hasIncompleteMasteryTag(item)"
+                  class="record-tag record-tag-alert"
+                >
+                  {{ incompleteMasteryTag }}
+                </span>
+              </div>
               <span>{{ formatDate(item.date) }} · {{ formatCategory(item.category) }}</span>
             </li>
           </ul>
@@ -224,15 +516,137 @@ onMounted(loadCheckins)
           <div v-if="loading" class="state-copy">正在加载打卡记录...</div>
           <div v-else-if="!checkins.length" class="state-copy">当前还没有打卡记录，提交第一条后会显示在这里。</div>
           <div v-else class="recent-records">
-            <article v-for="item in checkins" :key="item.id" class="recent-record">
+            <article v-for="item in paginatedCheckins" :key="item.id" class="recent-record">
               <div class="recent-record-meta">
                 <span>{{ formatDate(item.date) }}</span>
                 <span>{{ formatCategory(item.category) }}</span>
                 <span>{{ item.durationMinutes }} 分钟</span>
               </div>
               <h4>{{ item.title }}</h4>
-              <p>{{ item.summary || '这条记录还没有补充摘要。' }}</p>
+              <div v-if="item.tags.length" class="record-tag-list">
+                <span
+                  v-for="tag in item.tags"
+                  :key="`${item.id}-${tag}`"
+                  class="record-tag"
+                  :class="{ 'record-tag-alert': tag === incompleteMasteryTag }"
+                >
+                  {{ tag }}
+                </span>
+              </div>
+              <div v-if="editingCheckinId === item.id" class="record-editor">
+                <label>
+                  <span>日期</span>
+                  <input v-model="editForm.date" type="date" required />
+                </label>
+                <label>
+                  <span>标题</span>
+                  <input
+                    v-model="editForm.title"
+                    type="text"
+                    maxlength="80"
+                    placeholder="例如：完成一组动态规划题单"
+                    required
+                  />
+                </label>
+                <label>
+                  <span>分类</span>
+                  <select v-model="editForm.category">
+                    <option
+                      v-for="option in categoryOptions"
+                      :key="`edit-${item.id}-${option.value}`"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </label>
+                <label>
+                  <span>学习时长（分钟）</span>
+                  <input v-model="editForm.durationMinutes" type="number" min="1" max="1440" required />
+                </label>
+                <label>
+                  <span>标签（可选）</span>
+                  <input
+                    v-model="editForm.tags"
+                    type="text"
+                    placeholder="例如：尚未完全掌握, 二分, 复盘"
+                  />
+                </label>
+                <label>
+                  <span>摘要</span>
+                  <textarea
+                    v-model="editForm.summary"
+                    rows="4"
+                    maxlength="300"
+                    placeholder="记录一下今天做了什么、卡在哪、后面准备怎么补。"
+                  />
+                </label>
+                <div class="record-editor-actions">
+                  <button
+                    class="button primary"
+                    type="button"
+                    :disabled="savingCheckinId === item.id"
+                    @click="saveCheckin(item)"
+                  >
+                    {{ savingCheckinId === item.id ? '保存中...' : '保存修改' }}
+                  </button>
+                  <button
+                    class="button secondary"
+                    type="button"
+                    :disabled="savingCheckinId === item.id"
+                    @click="cancelEditingCheckin"
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+              <div v-else class="record-actions">
+                <button
+                  class="button secondary action-button"
+                  type="button"
+                  @click="startEditingCheckin(item)"
+                >
+                  编辑记录
+                </button>
+                <button
+                  v-if="!hasIncompleteMasteryTag(item)"
+                  class="button secondary action-button alert-button"
+                  type="button"
+                  @click="markAsIncompleteMastery(item)"
+                >
+                  标记为尚未完全掌握
+                </button>
+                <button
+                  class="button secondary action-button danger-button"
+                  type="button"
+                  :disabled="deletingCheckinId === item.id"
+                  @click="deleteCheckin(item)"
+                >
+                  {{ deletingCheckinId === item.id ? '删除中...' : '删除记录' }}
+                </button>
+              </div>
+              <div class="record-summary rich-text-rendered" v-html="renderSummaryText(item.summary)"></div>
             </article>
+
+            <div v-if="totalPages > 1" class="pagination-bar">
+              <button
+                class="button secondary pagination-button"
+                type="button"
+                :disabled="currentPage === 1"
+                @click="goToPage(currentPage - 1)"
+              >
+                上一页
+              </button>
+              <span>第 {{ currentPage }} / {{ totalPages }} 页</span>
+              <button
+                class="button secondary pagination-button"
+                type="button"
+                :disabled="currentPage === totalPages"
+                @click="goToPage(currentPage + 1)"
+              >
+                下一页
+              </button>
+            </div>
           </div>
         </article>
       </div>
@@ -262,6 +676,39 @@ onMounted(loadCheckins)
 .checkin-form {
   display: grid;
   gap: 14px;
+}
+
+.timer-panel {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid rgba(107, 211, 255, 0.2);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at top left, rgba(107, 211, 255, 0.12), transparent 38%),
+    rgba(255, 255, 255, 0.03);
+}
+
+.timer-display-block {
+  display: grid;
+  gap: 6px;
+}
+
+.timer-display-block strong {
+  font-size: clamp(32px, 5vw, 44px);
+  line-height: 1;
+  letter-spacing: 0.06em;
+}
+
+.timer-display-block small {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.timer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .checkin-form label {
@@ -323,6 +770,23 @@ onMounted(loadCheckins)
   gap: 18px;
 }
 
+.pagination-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pagination-bar span {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.pagination-button {
+  min-width: 104px;
+}
+
 .live-metric-card .metric-row {
   margin-top: 8px;
 }
@@ -340,6 +804,13 @@ onMounted(loadCheckins)
   gap: 4px;
   padding-top: 14px;
   border-top: 1px solid var(--border);
+}
+
+.recent-list-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .recent-list span,
@@ -369,6 +840,96 @@ onMounted(loadCheckins)
   font-size: 20px;
 }
 
+.record-summary {
+  margin: 0;
+  line-height: 1.8;
+}
+
+.record-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.record-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(107, 211, 255, 0.2);
+  background: rgba(107, 211, 255, 0.08);
+  color: #ccefff;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.record-tag-alert {
+  border-color: rgba(255, 98, 98, 0.35);
+  background: rgba(255, 98, 98, 0.14);
+  color: #ff9d9d;
+}
+
+.record-editor {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.record-editor label {
+  display: grid;
+  gap: 8px;
+}
+
+.record-editor span {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.record-editor input,
+.record-editor select,
+.record-editor textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font: inherit;
+}
+
+.record-editor textarea {
+  resize: vertical;
+  min-height: 110px;
+}
+
+.record-editor input::placeholder,
+.record-editor textarea::placeholder {
+  color: var(--muted);
+}
+
+.record-editor-actions,
+.record-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.action-button {
+  min-width: 112px;
+}
+
+.alert-button {
+  border-color: rgba(255, 98, 98, 0.3);
+  color: #ffb1b1;
+}
+
+.danger-button {
+  border-color: rgba(255, 128, 128, 0.26);
+  color: #ffc0c0;
+}
+
 .recent-record p,
 .state-copy,
 .empty-copy {
@@ -383,6 +944,17 @@ onMounted(loadCheckins)
 
   .submit-button {
     width: 100%;
+  }
+
+  .timer-actions > .button,
+  .pagination-button,
+  .record-editor-actions > .button,
+  .record-actions > .button {
+    width: 100%;
+  }
+
+  .pagination-bar {
+    align-items: stretch;
   }
 }
 </style>

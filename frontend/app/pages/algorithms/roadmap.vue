@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { renderInputTextToHtml } from '~/utils/notePreview'
+
 interface RoadmapGroup {
   id: string
   name: string
@@ -91,6 +93,10 @@ function createEmptyGroup(): RoadmapGroup {
     name: '新的子节点组',
     items: []
   }
+}
+
+function renderSummaryText(value: string) {
+  return renderInputTextToHtml(value)
 }
 
 function clearDropIndicators() {
@@ -693,7 +699,7 @@ watch(
               <button class="mindmap-branch-hitbox" type="button" @click="selectBranch(branch.id)">
                 <div class="mindmap-node-head">
                   <h3>{{ branch.title }}</h3>
-                  <p>{{ branch.summary }}</p>
+                  <div class="branch-summary rich-text-rendered" v-html="renderSummaryText(branch.summary)" />
                 </div>
               </button>
 
@@ -1068,6 +1074,12 @@ watch(
 
 .mindmap-node-head p {
   margin: 0;
+  color: var(--muted);
+  line-height: 1.75;
+  font-size: 15px;
+}
+
+.branch-summary {
   color: var(--muted);
   line-height: 1.75;
   font-size: 15px;

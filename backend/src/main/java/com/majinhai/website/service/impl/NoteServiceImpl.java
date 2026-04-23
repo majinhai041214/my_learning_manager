@@ -2,6 +2,7 @@ package com.majinhai.website.service.impl;
 
 import com.majinhai.website.config.StorageProperties;
 import com.majinhai.website.exception.BusinessException;
+import com.majinhai.website.model.dto.StudyNoteContentUpdateRequest;
 import com.majinhai.website.model.dto.StudyNoteResponse;
 import com.majinhai.website.model.dto.StudyNoteUpdateRequest;
 import com.majinhai.website.model.entity.StudyNote;
@@ -9,6 +10,7 @@ import com.majinhai.website.repository.NoteAnnotationRepository;
 import com.majinhai.website.repository.StudyNoteRepository;
 import com.majinhai.website.service.NoteService;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.OffsetDateTime;
@@ -105,6 +107,37 @@ public class NoteServiceImpl implements NoteService {
         note.setTitle(normalizeTitle(request.title(), note.getOriginalFilename()));
         note.setDescription(normalizeDescription(request.description()));
         note.setTags(normalizeTags(request.tags()));
+        return toResponse(studyNoteRepository.save(note));
+    }
+
+    @Override
+    public StudyNoteResponse updateContent(Long id, StudyNoteContentUpdateRequest request) {
+        StudyNote note = findNote(id);
+        if (!isEditableMarkdown(note.getExtension())) {
+            throw new BusinessException("NOTE_CONTENT_UPDATE_UNSUPPORTED", "当前仅支持直接编辑 Markdown 学习笔记");
+        }
+
+        Path resourcePath = notesDirectory.resolve(note.getStoredFilename()).normalize();
+        if (!Files.exists(resourcePath)) {
+            throw new BusinessException("NOTE_FILE_NOT_FOUND", "学习笔记文件不存在或已被移动");
+        }
+
+        String normalizedContent = request == null || request.content() == null
+                ? ""
+                : request.content().replace("\r\n", "\n");
+
+        try {
+            Files.writeString(resourcePath, normalizedContent, StandardCharsets.UTF_8);
+        } catch (IOException exception) {
+            throw new BusinessException("NOTE_CONTENT_UPDATE_FAILED", "保存学习笔记正文失败");
+        }
+
+        try {
+            note.setSize(Files.size(resourcePath));
+        } catch (IOException ignored) {
+            note.setSize(normalizedContent.getBytes(StandardCharsets.UTF_8).length);
+        }
+
         return toResponse(studyNoteRepository.save(note));
     }
 
@@ -250,4 +283,9 @@ public class NoteServiceImpl implements NoteService {
             default -> "application/octet-stream";
         };
     }
+
+    private boolean isEditableMarkdown(String extension) {
+        return "md".equals(extension) || "markdown".equals(extension);
+    }
+
 }

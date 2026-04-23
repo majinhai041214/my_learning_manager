@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { renderInputTextToHtml } from '~/utils/notePreview'
+
 interface StudyNote {
   id: number
   title: string
@@ -107,6 +109,10 @@ function formatFileSize(value: number) {
     return `${(value / 1024).toFixed(1)} KB`
   }
   return `${(value / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function renderDescriptionText(value: string | null, fallback: string) {
+  return renderInputTextToHtml(value?.trim() || fallback)
 }
 
 async function loadNotes() {
@@ -360,7 +366,10 @@ watch(
                 <span>{{ formatDate(note.uploadedAt) }}</span>
               </div>
               <h3>{{ note.title }}</h3>
-              <p>{{ note.description || note.originalFilename }}</p>
+              <div
+                class="note-card-description rich-text-rendered"
+                v-html="renderDescriptionText(note.description, note.originalFilename)"
+              ></div>
               <div v-if="note.tags.length" class="note-tags">
                 <span v-for="tag in note.tags" :key="tag" class="note-tag">{{ tag }}</span>
               </div>
@@ -391,7 +400,7 @@ watch(
 
 .note-upload-form span,
 .upload-hint,
-.note-card p,
+.note-card-description,
 .note-card-meta,
 .state-copy {
   color: var(--muted);
@@ -555,7 +564,7 @@ watch(
   font-size: 22px;
 }
 
-.note-card p {
+.note-card-description {
   margin: 0;
   line-height: 1.8;
 }
