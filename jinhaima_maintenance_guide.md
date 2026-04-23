@@ -203,7 +203,8 @@ unzip -o frontend-update.zip
 rm -rf /opt/www/website/frontend
 mv /opt/www/frontend /opt/www/website/
 
-chown -R admin:admin /opt/www/website/frontend
+sudo chown -R admin:admin /opt/www/website/frontend
+
 find /opt/www/website/frontend -type d -exec chmod 755 {} \;
 find /opt/www/website/frontend -type f -exec chmod 644 {} \;
 ```
