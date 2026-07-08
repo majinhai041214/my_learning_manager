@@ -17,9 +17,11 @@ management:
 
 website:
   storage:
-    base-dir: uploads
+    base-dir: ${WEBSITE_STORAGE_BASE_DIR:../uploads}
     notes-dir: notes
     code-dir: code
     images-dir: images
+    blog-posts-dir: blog/posts
+    blog-images-dir: blog/images
     checkins-file: checkins/checkins.json
     roadmap-file: roadmap/algorithm-roadmap.json

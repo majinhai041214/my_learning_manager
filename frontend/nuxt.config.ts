@@ -1,6 +1,14 @@
 export default defineNuxtConfig({
   compatibilityDate: '2026-04-20',
   devtools: { enabled: true },
+  nitro: {
+    devProxy: {
+      '/api': {
+        target: process.env.NUXT_DEV_API_TARGET || 'http://127.0.0.1:8080/api',
+        changeOrigin: true
+      }
+    }
+  },
   runtimeConfig: {
     public: {
       apiBase: process.env.NUXT_PUBLIC_API_BASE || '/api'

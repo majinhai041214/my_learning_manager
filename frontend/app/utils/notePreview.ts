@@ -36,7 +36,7 @@ function renderMathExpression(value: string, displayMode = false) {
 }
 
 function renderInlineMarkdown(value: string) {
-  const pattern = /(`[^`]+`|\$\$[\s\S]+?\$\$|\$[^$\n]+\$|\[[^\]]+\]\(([^)]+)\))/g
+  const pattern = /(`[^`]+`|\$\$[\s\S]+?\$\$|\$[^$\n]+\$|!\[[^\]]*]\([^)]+\)|\[[^\]]+\]\(([^)]+)\))/g
   let result = ''
   let cursor = 0
   let match: RegExpExecArray | null
@@ -51,6 +51,13 @@ function renderInlineMarkdown(value: string) {
       result += `<span class="math-inline">${renderMathExpression(token.slice(2, -2), true)}</span>`
     } else if (token.startsWith('$')) {
       result += `<span class="math-inline">${renderMathExpression(token.slice(1, -1), false)}</span>`
+    } else if (token.startsWith('![')) {
+      const imageMatch = token.match(/^!\[([^\]]*)]\(([^)]+)\)$/)
+      if (imageMatch) {
+        result += `<img class="markdown-image" src="${escapeHtml(imageMatch[2])}" alt="${escapeHtml(imageMatch[1])}" loading="lazy" />`
+      } else {
+        result += renderPlainInline(token)
+      }
     } else if (token.startsWith('[')) {
       const linkMatch = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
       if (linkMatch) {

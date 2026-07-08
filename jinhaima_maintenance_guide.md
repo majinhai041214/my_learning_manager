@@ -68,6 +68,41 @@ Nginx :80
 /opt/www/website/backend/target/app.jar
 ```
 
+### 2.5 当前数据目录
+
+网站运行数据已经与前后端源码目录分离，统一存放在：
+
+```bash
+/opt/www/website/uploads
+```
+
+其中主要包括：
+
+```bash
+/opt/www/website/uploads/notes
+/opt/www/website/uploads/checkins
+/opt/www/website/uploads/roadmap
+/opt/www/website/uploads/blog
+```
+
+说明：
+
+- 学习笔记元数据：`/opt/www/website/uploads/notes/notes.json`
+- 笔记批注：`/opt/www/website/uploads/notes/annotations.json`
+- 笔记原文件：`/opt/www/website/uploads/notes/files/`
+- 学习记录：`/opt/www/website/uploads/checkins/checkins.json`
+- 算法路线图：`/opt/www/website/uploads/roadmap/algorithm-roadmap.json`
+- 博客 Markdown：`/opt/www/website/uploads/blog/posts/`
+- 博客图片：`/opt/www/website/uploads/blog/images/`
+
+旧版本可能曾把数据放在：
+
+```bash
+/opt/www/website/backend/uploads
+```
+
+当前版本已经默认改为根目录 `uploads`，后续维护请统一以 `/opt/www/website/uploads` 作为正式数据目录。
+
 ---
 
 ## 3. 服务器常用命令速查
@@ -285,13 +320,49 @@ scp backend-update.zip root@jinhaima.xyz:/opt/www/
 
 ---
 
-### 6.3 服务器替换后端代码
+### 6.3 先备份线上数据与当前后端
 
 登录服务器：
 
 ```bash
 ssh root@jinhaima.xyz
 ```
+
+建议先确认当前数据目录：
+
+```bash
+ls -lah /opt/www/website/uploads
+ls -lah /opt/www/website/uploads/notes
+ls -lah /opt/www/website/uploads/checkins
+```
+
+创建带日期的备份目录：
+
+```bash
+mkdir -p /opt/www/backups/website-$(date +%F)
+```
+
+备份线上数据和当前后端代码：
+
+```bash
+cp -a /opt/www/website/uploads /opt/www/backups/website-$(date +%F)/uploads
+cp -a /opt/www/website/backend /opt/www/backups/website-$(date +%F)/backend
+```
+
+如果服务器上还残留旧版数据目录，也顺手备份：
+
+```bash
+cp -a /opt/www/website/backend/uploads /opt/www/backups/website-$(date +%F)/backend-uploads 2>/dev/null || true
+```
+
+> 重要：
+>
+> 不要在未备份前直接删除 `/opt/www/website/backend`。
+> 旧版本曾把数据放进 `backend/uploads`，先备份可以避免误删学习笔记、学习记录和批注。
+
+---
+
+### 6.4 服务器替换后端代码
 
 执行：
 
@@ -309,7 +380,7 @@ find /opt/www/website/backend -type f -exec chmod 644 {} \;
 
 ---
 
-### 6.4 重新打包后端
+### 6.5 重新打包后端
 
 切换用户：
 
@@ -328,12 +399,21 @@ sudo systemctl restart website-backend
 
 ---
 
-### 6.5 验证后端是否更新成功
+### 6.6 验证后端是否更新成功
 
 ```bash
 sudo systemctl status website-backend --no-pager
 curl http://127.0.0.1:8080/api/notes
 curl http://127.0.0.1/api/notes
+```
+
+顺手确认数据目录仍然在根目录 `uploads`：
+
+```bash
+ls -lah /opt/www/website/uploads
+ls -lah /opt/www/website/uploads/notes
+ls -lah /opt/www/website/uploads/checkins
+ls -lah /opt/www/website/uploads/roadmap
 ```
 
 ---
@@ -640,6 +720,13 @@ sudo systemctl restart website-frontend
 /opt/www/website/frontend
 /opt/www/website/logs
 ```
+
+其中最重要的是：
+
+- `/opt/www/website/uploads`
+
+因为学习笔记、学习记录、批注、路线图这些运行数据都已经统一放在这里，不再依赖 `backend/uploads`。
+博客文章 Markdown 和博客图片也放在这个目录下，更新代码前同样要备份。
 
 ### 建议频率
 
